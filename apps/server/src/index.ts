@@ -2,9 +2,10 @@ import Fastify from 'fastify';
 import cors from '@fastify/cors';
 import websocket from '@fastify/websocket';
 import { taskManager } from './queue/manager.js';
+import { conversationManager } from './conversations/manager.js';
 import { listAvailableModels } from './llm/client.js';
 import { listModels } from '@opendispatch/shared';
-import type { CreateTaskInput } from '@opendispatch/shared';
+import type { CreateTaskInput, CreateConversationInput, SendMessageInput } from '@opendispatch/shared';
 
 const PORT = Number(process.env.PORT) || 3456;
 
@@ -14,7 +15,7 @@ async function main() {
   await app.register(cors, { origin: true });
   await app.register(websocket);
 
-  // ── REST Routes ──
+  // ── Health & Models ──
 
   app.get('/health', async () => ({ status: 'ok', timestamp: Date.now() }));
 
@@ -25,6 +26,8 @@ async function main() {
     ]);
     return { available, registry };
   });
+
+  // ── Tasks (fire-and-forget mode) ──
 
   app.post<{ Body: CreateTaskInput }>('/tasks', async (req, reply) => {
     const { prompt, model, workingDirectory } = req.body;
@@ -55,8 +58,59 @@ async function main() {
     return taskManager.getTaskSteps(req.params.id);
   });
 
+  app.post<{ Params: { id: string } }>('/tasks/:id/pause', async (req) => {
+    const ok = await taskManager.pauseTask(req.params.id);
+    return { ok };
+  });
+
+  app.post<{ Params: { id: string } }>('/tasks/:id/resume', async (req) => {
+    const ok = await taskManager.resumeTask(req.params.id);
+    return { ok };
+  });
+
   app.post<{ Params: { id: string } }>('/tasks/:id/cancel', async (req) => {
     await taskManager.cancelTask(req.params.id);
+    return { ok: true };
+  });
+
+  // ── Conversations (chat mode) ──
+
+  app.post<{ Body: CreateConversationInput }>('/conversations', async (req, reply) => {
+    const conv = await conversationManager.create(req.body || {});
+    reply.code(201);
+    return conv;
+  });
+
+  app.get('/conversations', async () => {
+    return conversationManager.list();
+  });
+
+  app.get<{ Params: { id: string } }>('/conversations/:id', async (req, reply) => {
+    const conv = await conversationManager.get(req.params.id);
+    if (!conv) {
+      reply.code(404);
+      return { error: 'Conversation not found' };
+    }
+    return conv;
+  });
+
+  app.get<{ Params: { id: string } }>('/conversations/:id/messages', async (req) => {
+    return conversationManager.getMessages(req.params.id);
+  });
+
+  app.post<{ Params: { id: string }; Body: SendMessageInput }>('/conversations/:id/messages', async (req, reply) => {
+    const { content } = req.body;
+    if (!content) {
+      reply.code(400);
+      return { error: 'content is required' };
+    }
+
+    const response = await conversationManager.sendMessage(req.params.id, content);
+    return { response };
+  });
+
+  app.delete<{ Params: { id: string } }>('/conversations/:id', async (req) => {
+    await conversationManager.delete(req.params.id);
     return { ok: true };
   });
 
@@ -64,31 +118,41 @@ async function main() {
 
   app.register(async function (app) {
     app.get('/ws', { websocket: true }, (socket) => {
-      const events = [
+      const taskEvents = [
         'task:created', 'task:started', 'task:step',
         'task:completed', 'task:failed', 'task:cancelled',
+        'task:paused', 'task:resumed',
+      ];
+      const convEvents = [
+        'conversation:created', 'conversation:message', 'conversation:deleted',
       ];
 
-      const handlers = events.map(event => {
-        const handler = (data: unknown) => {
-          socket.send(JSON.stringify({ event, data }));
-        };
+      const handlers: Array<{ source: typeof taskManager; event: string; handler: (data: unknown) => void }> = [];
+
+      for (const event of taskEvents) {
+        const handler = (data: unknown) => socket.send(JSON.stringify({ event, data }));
         taskManager.on(event, handler);
-        return { event, handler };
-      });
+        handlers.push({ source: taskManager, event, handler });
+      }
+
+      for (const event of convEvents) {
+        const handler = (data: unknown) => socket.send(JSON.stringify({ event, data }));
+        conversationManager.on(event, handler);
+        handlers.push({ source: conversationManager, event, handler });
+      }
 
       socket.on('close', () => {
-        for (const { event, handler } of handlers) {
-          taskManager.removeListener(event, handler);
+        for (const { source, event, handler } of handlers) {
+          source.removeListener(event, handler);
         }
       });
     });
   });
 
   await app.listen({ port: PORT, host: '0.0.0.0' });
-  console.log(`\n🚀 OpenDispatch server running at http://localhost:${PORT}`);
-  console.log(`   WebSocket at ws://localhost:${PORT}/ws`);
-  console.log(`   Web UI at http://localhost:3000\n`);
+  console.log(`\nOpenDispatch server running at http://localhost:${PORT}`);
+  console.log(`  WebSocket at ws://localhost:${PORT}/ws`);
+  console.log(`  Web UI at http://localhost:3000\n`);
 }
 
 main().catch((err) => {

@@ -27,6 +27,33 @@ export interface AgentContext {
   workingDirectory: string;
   events: EventEmitter;
   abortSignal?: AbortSignal;
+  pauseSignal?: PauseController;
+}
+
+export class PauseController {
+  private _paused = false;
+  private _resolveResume: (() => void) | null = null;
+
+  get paused() { return this._paused; }
+
+  pause() {
+    this._paused = true;
+  }
+
+  resume() {
+    this._paused = false;
+    if (this._resolveResume) {
+      this._resolveResume();
+      this._resolveResume = null;
+    }
+  }
+
+  async waitIfPaused(): Promise<void> {
+    if (!this._paused) return;
+    return new Promise<void>((resolve) => {
+      this._resolveResume = resolve;
+    });
+  }
 }
 
 export interface AgentStepEvent {
@@ -56,6 +83,13 @@ export async function runAgentLoop(prompt: string, ctx: AgentContext): Promise<A
   for (let i = 0; i < MAX_STEPS; i++) {
     if (ctx.abortSignal?.aborted) {
       return { status: 'cancelled', steps: stepNumber };
+    }
+
+    // Wait if paused
+    if (ctx.pauseSignal?.paused) {
+      ctx.events.emit('paused', { taskId: ctx.taskId });
+      await ctx.pauseSignal.waitIfPaused();
+      ctx.events.emit('resumed', { taskId: ctx.taskId });
     }
 
     const response = await chatCompletion({
@@ -95,6 +129,12 @@ export async function runAgentLoop(prompt: string, ctx: AgentContext): Promise<A
     for (const toolCall of response.toolCalls) {
       if (ctx.abortSignal?.aborted) {
         return { status: 'cancelled', steps: stepNumber };
+      }
+
+      if (ctx.pauseSignal?.paused) {
+        ctx.events.emit('paused', { taskId: ctx.taskId });
+        await ctx.pauseSignal.waitIfPaused();
+        ctx.events.emit('resumed', { taskId: ctx.taskId });
       }
 
       stepNumber++;

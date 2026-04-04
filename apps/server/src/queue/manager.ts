@@ -3,7 +3,7 @@ import { EventEmitter } from 'node:events';
 import { eq } from 'drizzle-orm';
 import { db, tasks, taskSteps } from '@opendispatch/db';
 import { routeTask } from '@opendispatch/shared';
-import { runAgentLoop, type AgentStepEvent } from '../agent/loop.js';
+import { runAgentLoop, PauseController, type AgentStepEvent } from '../agent/loop.js';
 import type { Task, CreateTaskInput } from '@opendispatch/shared';
 import { homedir } from 'node:os';
 
@@ -12,6 +12,7 @@ const MAX_CONCURRENT = 1;
 export class TaskManager extends EventEmitter {
   private running = 0;
   private abortControllers = new Map<string, AbortController>();
+  private pauseControllers = new Map<string, PauseController>();
 
   async createTask(input: CreateTaskInput): Promise<Task> {
     const now = Date.now();
@@ -64,11 +65,37 @@ export class TaskManager extends EventEmitter {
     return db.select().from(taskSteps).where(eq(taskSteps.taskId, taskId)).orderBy(taskSteps.stepNumber).all();
   }
 
+  async pauseTask(id: string): Promise<boolean> {
+    const pause = this.pauseControllers.get(id);
+    if (!pause) return false;
+
+    pause.pause();
+    db.update(tasks).set({ status: 'paused', updatedAt: Date.now() }).where(eq(tasks.id, id)).run();
+    this.emit('task:paused', { id });
+    return true;
+  }
+
+  async resumeTask(id: string): Promise<boolean> {
+    const pause = this.pauseControllers.get(id);
+    if (!pause) return false;
+
+    pause.resume();
+    db.update(tasks).set({ status: 'running', updatedAt: Date.now() }).where(eq(tasks.id, id)).run();
+    this.emit('task:resumed', { id });
+    return true;
+  }
+
   async cancelTask(id: string): Promise<boolean> {
     const controller = this.abortControllers.get(id);
     if (controller) {
       controller.abort();
       this.abortControllers.delete(id);
+    }
+
+    const pause = this.pauseControllers.get(id);
+    if (pause) {
+      pause.resume(); // unblock if paused so the loop can exit
+      this.pauseControllers.delete(id);
     }
 
     db.update(tasks).set({ status: 'cancelled', updatedAt: Date.now() }).where(eq(tasks.id, id)).run();
@@ -90,6 +117,8 @@ export class TaskManager extends EventEmitter {
 
     const controller = new AbortController();
     this.abortControllers.set(taskId, controller);
+    const pauseCtrl = new PauseController();
+    this.pauseControllers.set(taskId, pauseCtrl);
 
     try {
       const events = new EventEmitter();
@@ -115,6 +144,7 @@ export class TaskManager extends EventEmitter {
         workingDirectory: pending.workingDirectory || homedir(),
         events,
         abortSignal: controller.signal,
+        pauseSignal: pauseCtrl,
       });
 
       const status = result.status === 'completed' ? 'completed' : 'failed';
@@ -136,6 +166,7 @@ export class TaskManager extends EventEmitter {
       this.emit('task:failed', { id: taskId, error: (err as Error).message });
     } finally {
       this.abortControllers.delete(taskId);
+      this.pauseControllers.delete(taskId);
       this.running--;
       this.processQueue();
     }

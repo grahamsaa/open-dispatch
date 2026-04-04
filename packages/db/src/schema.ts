@@ -27,3 +27,24 @@ export const taskSteps = sqliteTable('task_steps', {
   toolCallId: text('tool_call_id'),
   createdAt: integer('created_at', { mode: 'number' }).notNull(),
 });
+
+export const conversations = sqliteTable('conversations', {
+  id: text('id').primaryKey(),
+  title: text('title').notNull(),
+  model: text('model'),
+  workingDirectory: text('working_directory'),
+  createdAt: integer('created_at', { mode: 'number' }).notNull(),
+  updatedAt: integer('updated_at', { mode: 'number' }).notNull(),
+});
+
+export const conversationMessages = sqliteTable('conversation_messages', {
+  id: text('id').primaryKey(),
+  conversationId: text('conversation_id').notNull().references(() => conversations.id),
+  role: text('role', {
+    enum: ['user', 'assistant', 'tool_call', 'tool_result'],
+  }).notNull(),
+  content: text('content').notNull(),
+  toolName: text('tool_name'),
+  toolCallId: text('tool_call_id'),
+  createdAt: integer('created_at', { mode: 'number' }).notNull(),
+});
