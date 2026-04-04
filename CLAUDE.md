@@ -21,7 +21,14 @@ Turborepo monorepo with four packages:
 
 **Agent loop**: `apps/server/src/agent/loop.ts` — sends messages + tool definitions to LLM, executes returned tool_calls, feeds results back, repeats until done or max steps (25).
 
-**Tools**: shell_exec, file_read, file_write, file_list, file_search, web_fetch, task_complete. Defined in `packages/shared/src/tools/definitions.ts`, executed in `apps/server/src/tools/executor.ts`.
+**Tools**: Defined in `packages/shared/src/tools/definitions.ts`, executed in `apps/server/src/tools/executor.ts`:
+- `shell_exec`, `file_read`, `file_write`, `file_list`, `file_search`, `web_fetch` — core utilities
+- `browser_navigate` — Playwright-based browser automation. Extracts DOM/accessibility tree, sends to local text LLM for action planning, executes click/fill/navigate/scroll. No vision model needed. Runs a visible Chromium window. Implemented in `apps/server/src/tools/browser.ts`.
+- `browser_get_page` — snapshot of the current browser page (URL, title, interactive elements)
+- `screen_control` — vision-based desktop automation. Takes screenshots with `screencapture`, sends to `qwen2.5-vl-72b` for analysis, executes mouse/keyboard via `cliclick` and AppleScript. For non-browser apps and browser fallback. Implemented in `apps/server/src/tools/screen.ts`.
+- `task_complete` — signals the agent loop to finish
+
+**Browser vs Screen**: The agent is prompted to prefer `browser_navigate` for web tasks (fast, DOM-based, no vision credits). `screen_control` is reserved for native macOS apps, CAPTCHAs, and complex auth flows where Playwright can't help.
 
 ## Commands
 

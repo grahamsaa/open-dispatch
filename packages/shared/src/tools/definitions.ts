@@ -100,6 +100,49 @@ export const TOOL_DEFINITIONS: ToolDefinition[] = [
   {
     type: 'function',
     function: {
+      name: 'browser_navigate',
+      description: 'Automate a web browser to complete a task. Opens a real Chromium browser, navigates pages, clicks elements, fills forms, extracts data. Uses DOM analysis — no vision model needed. Prefer this for any web-based task. The browser runs with a visible window.',
+      parameters: {
+        type: 'object',
+        properties: {
+          task: { type: 'string', description: 'Detailed description of what to do in the browser (e.g., "Go to github.com/grahamsaa, find the open-dispatch repo, and read the README")' },
+          startUrl: { type: 'string', description: 'URL to navigate to before starting (optional)' },
+          model: { type: 'string', description: 'Model to use for browser action planning (optional, defaults to fast MoE model)' },
+        },
+        required: ['task'],
+      },
+    },
+  },
+  {
+    type: 'function',
+    function: {
+      name: 'browser_get_page',
+      description: 'Get a snapshot of the currently open browser page — its URL, title, main content, and interactive elements. Useful for inspecting what the browser is currently showing.',
+      parameters: {
+        type: 'object',
+        properties: {},
+        required: [],
+      },
+    },
+  },
+  {
+    type: 'function',
+    function: {
+      name: 'screen_control',
+      description: 'Control the macOS desktop by seeing the screen and performing mouse/keyboard actions. Uses a vision model (qwen2.5-vl-72b) to understand screenshots and decide actions. Use this for non-browser apps (Finder, Mail, system dialogs, native apps) or when browser automation cannot handle something (CAPTCHAs, complex auth flows). More expensive than browser_navigate — prefer browser_navigate for web tasks.',
+      parameters: {
+        type: 'object',
+        properties: {
+          task: { type: 'string', description: 'Detailed description of the desktop task (e.g., "Open Finder, navigate to ~/Documents, and create a new folder called Reports")' },
+          maxSteps: { type: 'number', description: 'Maximum number of screenshot-action cycles (default: 15)' },
+        },
+        required: ['task'],
+      },
+    },
+  },
+  {
+    type: 'function',
+    function: {
       name: 'task_complete',
       description: 'Mark the current task as complete and provide the final result/summary to the user.',
       parameters: {
