@@ -1,0 +1,21 @@
+{
+  "name": "open-dispatch",
+  "private": true,
+  "workspaces": [
+    "apps/*",
+    "packages/*"
+  ],
+  "scripts": {
+    "dev": "turbo dev",
+    "build": "turbo build",
+    "dev:server": "turbo dev --filter=@opendispatch/server",
+    "dev:web": "turbo dev --filter=@opendispatch/web",
+    "db:generate": "turbo db:generate --filter=@opendispatch/db",
+    "db:migrate": "turbo db:migrate --filter=@opendispatch/db"
+  },
+  "packageManager": "npm@10.9.7",
+  "devDependencies": {
+    "turbo": "^2",
+    "typescript": "^5.8"
+  }
+}

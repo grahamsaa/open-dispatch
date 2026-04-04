@@ -1,0 +1,26 @@
+{
+  "name": "@opendispatch/server",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "tsx watch src/index.ts",
+    "build": "tsc",
+    "start": "node dist/index.js"
+  },
+  "dependencies": {
+    "@opendispatch/shared": "*",
+    "@opendispatch/db": "*",
+    "fastify": "^5",
+    "@fastify/websocket": "^11",
+    "@fastify/cors": "^10",
+    "openai": "^4",
+    "nanoid": "^5",
+    "zod": "^3"
+  },
+  "devDependencies": {
+    "tsx": "^4",
+    "typescript": "^5.8",
+    "@types/node": "^22"
+  }
+}
