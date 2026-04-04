@@ -6,8 +6,12 @@ import { conversationManager } from './conversations/manager.js';
 import { listAvailableModels } from './llm/client.js';
 import { listModels } from '@opendispatch/shared';
 import type { CreateTaskInput, CreateConversationInput, SendMessageInput } from '@opendispatch/shared';
+import { exec } from 'node:child_process';
+import { promisify } from 'node:util';
 
+const execAsync = promisify(exec);
 const PORT = Number(process.env.PORT) || 3456;
+const CDP_ENDPOINT = process.env.CDP_URL || 'http://localhost:9222';
 
 async function main() {
   const app = Fastify({ logger: true });
@@ -112,6 +116,56 @@ async function main() {
   app.delete<{ Params: { id: string } }>('/conversations/:id', async (req) => {
     await conversationManager.delete(req.params.id);
     return { ok: true };
+  });
+
+  // ── Chrome CDP Management ──
+
+  app.get('/chrome/status', async () => {
+    try {
+      const response = await fetch(`${CDP_ENDPOINT}/json/version`, { signal: AbortSignal.timeout(2000) });
+      if (response.ok) {
+        const info = await response.json() as { Browser?: string; webSocketDebuggerUrl?: string };
+        return {
+          connected: true,
+          browser: info.Browser || 'unknown',
+          endpoint: CDP_ENDPOINT,
+          message: 'Chrome CDP connected. Browser automation will use your authenticated sessions.',
+        };
+      }
+    } catch {}
+    return {
+      connected: false,
+      endpoint: CDP_ENDPOINT,
+      message: 'Chrome CDP not available. Run "npm run chrome" to enable authenticated browsing.',
+    };
+  });
+
+  app.post('/chrome/launch', async () => {
+    try {
+      // Check if already running
+      const check = await fetch(`${CDP_ENDPOINT}/json/version`, { signal: AbortSignal.timeout(2000) }).catch(() => null);
+      if (check?.ok) {
+        return { ok: true, message: 'Chrome CDP already running.' };
+      }
+
+      // Try to quit existing Chrome and relaunch with CDP
+      await execAsync('osascript -e \'tell application "Google Chrome" to quit\'').catch(() => {});
+      await new Promise(r => setTimeout(r, 2000));
+      await execAsync('open -a "Google Chrome" --args --remote-debugging-port=9222');
+
+      // Wait for CDP to become available
+      for (let i = 0; i < 10; i++) {
+        await new Promise(r => setTimeout(r, 1000));
+        const resp = await fetch(`${CDP_ENDPOINT}/json/version`, { signal: AbortSignal.timeout(1000) }).catch(() => null);
+        if (resp?.ok) {
+          return { ok: true, message: 'Chrome relaunched with CDP enabled.' };
+        }
+      }
+
+      return { ok: false, message: 'Chrome launched but CDP not responding yet. Give it a moment.' };
+    } catch (err) {
+      return { ok: false, message: `Failed to launch Chrome: ${(err as Error).message}` };
+    }
   });
 
   // ── WebSocket ──

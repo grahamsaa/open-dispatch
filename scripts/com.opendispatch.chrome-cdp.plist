@@ -1,0 +1,29 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<!--
+  LaunchAgent that starts Chrome with CDP debugging enabled.
+  Install with:
+    cp scripts/com.opendispatch.chrome-cdp.plist ~/Library/LaunchAgents/
+    launchctl load ~/Library/LaunchAgents/com.opendispatch.chrome-cdp.plist
+
+  This runs at login and launches Chrome with remote debugging on port 9222.
+  OpenDispatch can then connect to your authenticated sessions.
+-->
+<dict>
+    <key>Label</key>
+    <string>com.opendispatch.chrome-cdp</string>
+    <key>ProgramArguments</key>
+    <array>
+        <string>open</string>
+        <string>-a</string>
+        <string>Google Chrome</string>
+        <string>--args</string>
+        <string>--remote-debugging-port=9222</string>
+    </array>
+    <key>RunAtLoad</key>
+    <true/>
+    <key>LaunchOnlyOnce</key>
+    <true/>
+</dict>
+</plist>

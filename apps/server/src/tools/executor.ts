@@ -2,7 +2,7 @@ import type { ToolCall, ToolResult } from '@opendispatch/shared';
 import { shellExec } from './shell.js';
 import { fileRead, fileWrite, fileList, fileSearch } from './file.js';
 import { webFetch } from './web.js';
-import { browserNavigate, browserGetPage } from './browser.js';
+import { browserNavigate, browserGetPage, browserStatus } from './browser.js';
 import { screenControl } from './screen.js';
 
 export async function executeTool(call: ToolCall, defaultCwd: string): Promise<ToolResult> {
@@ -33,6 +33,8 @@ export async function executeTool(call: ToolCall, defaultCwd: string): Promise<T
         return await browserNavigate(args as { task: string; startUrl?: string; model?: string }, defaultCwd);
       case 'browser_get_page':
         return await browserGetPage();
+      case 'browser_status':
+        return await browserStatus();
       case 'screen_control':
         return await screenControl(args as { task: string; maxSteps?: number });
       case 'task_complete':

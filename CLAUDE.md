@@ -62,6 +62,24 @@ npm test                        # Run tests
 ### WebSocket
 - `ws://localhost:3456/ws` — Real-time events for tasks and conversations
 
+## Chrome CDP (authenticated browsing)
+
+The browser tool connects to the user's actual Chrome via Chrome DevTools Protocol (CDP). This gives full access to authenticated sessions — Chase, Gmail, any site the user is logged into.
+
+**Setup:**
+```bash
+npm run chrome              # Quit Chrome and relaunch with CDP on port 9222
+npm run chrome:install      # Install launchd agent so Chrome always starts with CDP
+```
+
+**API:**
+- `GET /chrome/status` — check if CDP is connected
+- `POST /chrome/launch` — quit Chrome and relaunch with CDP enabled
+
+**How it works:** `browser.ts` tries `chromium.connectOverCDP('http://localhost:9222')` first. If Chrome isn't running with CDP, it falls back to a standalone Chromium (no sessions). The `scripts/chrome-cdp.sh` helper handles the Chrome restart.
+
+**Env var:** Override CDP endpoint with `CDP_URL` (default: `http://localhost:9222`).
+
 ## LMStudio
 
 The server connects to LMStudio's OpenAI-compatible API at `http://localhost:1234/v1`. Override with `LMSTUDIO_URL` env var.

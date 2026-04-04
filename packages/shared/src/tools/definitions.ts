@@ -128,6 +128,18 @@ export const TOOL_DEFINITIONS: ToolDefinition[] = [
   {
     type: 'function',
     function: {
+      name: 'browser_status',
+      description: 'Check whether the browser is connected to Chrome (with authenticated sessions) or running standalone. Shows CDP connection status.',
+      parameters: {
+        type: 'object',
+        properties: {},
+        required: [],
+      },
+    },
+  },
+  {
+    type: 'function',
+    function: {
       name: 'screen_control',
       description: 'Control the macOS desktop by seeing the screen and performing mouse/keyboard actions. Uses a vision model (qwen2.5-vl-72b) to understand screenshots and decide actions. Use this for non-browser apps (Finder, Mail, system dialogs, native apps) or when browser automation cannot handle something (CAPTCHAs, complex auth flows). More expensive than browser_navigate — prefer browser_navigate for web tasks.',
       parameters: {

@@ -4,21 +4,43 @@ import { chatCompletion } from '../llm/completion.js';
 import type { ChatMessage } from '@opendispatch/shared';
 
 const MAX_BROWSER_STEPS = 20;
+const CDP_ENDPOINT = process.env.CDP_URL || 'http://localhost:9222';
+
+// ── Browser Connection ──
+// Priority:
+// 1. CDP connection to user's Chrome (has auth sessions, cookies, etc.)
+// 2. Standalone Chromium (fresh, no sessions)
 
 let browserInstance: Browser | null = null;
 let browserContext: BrowserContext | null = null;
+let connectionMode: 'cdp' | 'standalone' | null = null;
 
-async function getBrowser(): Promise<BrowserContext> {
-  if (!browserContext || !browserInstance?.isConnected()) {
-    browserInstance = await chromium.launch({
-      headless: false,
-      args: ['--window-size=1280,900'],
-    });
-    browserContext = await browserInstance.newContext({
-      viewport: { width: 1280, height: 900 },
-    });
+async function getBrowser(): Promise<{ context: BrowserContext; mode: 'cdp' | 'standalone' }> {
+  if (browserContext && browserInstance?.isConnected()) {
+    return { context: browserContext, mode: connectionMode! };
   }
-  return browserContext;
+
+  // Try CDP first — connects to user's running Chrome
+  try {
+    browserInstance = await chromium.connectOverCDP(CDP_ENDPOINT, { timeout: 3000 });
+    const contexts = browserInstance.contexts();
+    browserContext = contexts[0] || await browserInstance.newContext();
+    connectionMode = 'cdp';
+    return { context: browserContext, mode: 'cdp' };
+  } catch {
+    // CDP not available — fall back to standalone
+  }
+
+  // Standalone Chromium
+  browserInstance = await chromium.launch({
+    headless: false,
+    args: ['--window-size=1280,900'],
+  });
+  browserContext = await browserInstance.newContext({
+    viewport: { width: 1280, height: 900 },
+  });
+  connectionMode = 'standalone';
+  return { context: browserContext, mode: 'standalone' };
 }
 
 interface BrowserNavigateArgs {
@@ -47,13 +69,14 @@ Rules:
 - If a page hasn't loaded yet, use {"action": "wait", "ms": 2000}.
 - If you need to click a link or button, find its selector from the page snapshot.
 - After filling a form field, you may need to click a submit button or press Enter.
-- If the page content doesn't seem right for the task, re-navigate.`;
+- If the page content doesn't seem right for the task, re-navigate.
+- You are operating inside the user's real Chrome browser with their authenticated sessions. If a site shows you a logged-in state, you can use it directly.`;
 
 export async function browserNavigate(args: BrowserNavigateArgs, defaultCwd: string): Promise<ToolResult> {
   const model = args.model || 'qwen3.5-122b-a10b';
 
   try {
-    const ctx = await getBrowser();
+    const { context: ctx, mode } = await getBrowser();
     const page = await ctx.newPage();
 
     if (args.startUrl) {
@@ -65,6 +88,7 @@ export async function browserNavigate(args: BrowserNavigateArgs, defaultCwd: str
     ];
 
     const stepLog: string[] = [];
+    stepLog.push(`Browser mode: ${mode}${mode === 'cdp' ? ' (using Chrome sessions)' : ' (standalone, no sessions)'}`);
 
     for (let step = 0; step < MAX_BROWSER_STEPS; step++) {
       const snapshot = await extractPageSnapshot(page);
@@ -107,12 +131,10 @@ export async function browserNavigate(args: BrowserNavigateArgs, defaultCwd: str
 
       try {
         await executeAction(page, action);
-        // Brief wait for page to react
         await page.waitForTimeout(500);
       } catch (err) {
         const errMsg = (err as Error).message;
         stepLog.push(`  Error: ${errMsg}`);
-        // Feed error back to the LLM so it can recover
         messages.push({
           role: 'user',
           content: `Action failed with error: ${errMsg}. Try a different approach.`,
@@ -136,14 +158,11 @@ export async function browserNavigate(args: BrowserNavigateArgs, defaultCwd: str
 }
 
 async function extractPageSnapshot(page: Page): Promise<string> {
-  // Extract a compact representation of the page using the accessibility tree
-  // plus visible interactive elements
   const snapshot = await page.evaluate(() => {
     const MAX_ELEMENTS = 150;
     const elements: string[] = [];
     let count = 0;
 
-    // Get all interactive and semantic elements
     const selectors = [
       'a[href]', 'button', 'input', 'textarea', 'select',
       'h1', 'h2', 'h3', 'h4', '[role="button"]', '[role="link"]',
@@ -157,7 +176,7 @@ async function extractPageSnapshot(page: Page): Promise<string> {
         if (count >= MAX_ELEMENTS) break;
 
         const htmlEl = el as HTMLElement;
-        if (!htmlEl.offsetParent && htmlEl.tagName !== 'BODY') continue; // hidden
+        if (!htmlEl.offsetParent && htmlEl.tagName !== 'BODY') continue;
 
         const tag = htmlEl.tagName.toLowerCase();
         const text = (htmlEl.textContent || '').trim().slice(0, 80);
@@ -182,14 +201,13 @@ async function extractPageSnapshot(page: Page): Promise<string> {
       if (count >= MAX_ELEMENTS) break;
     }
 
-    // Also get the page title and any visible text in main/article
     const title = document.title;
     const mainText = (document.querySelector('main, article, [role="main"]') as HTMLElement)?.textContent?.trim().slice(0, 500) || '';
 
     return `Title: ${title}\n\nMain content:\n${mainText}\n\nInteractive elements:\n${elements.join('\n')}`;
   });
 
-  return snapshot.slice(0, 8000); // Keep within reasonable context
+  return snapshot.slice(0, 8000);
 }
 
 interface BrowserAction {
@@ -205,14 +223,11 @@ interface BrowserAction {
 }
 
 function parseAction(content: string): BrowserAction | null {
-  // Try to extract JSON from the response
-  // First try: the whole content is JSON
   try {
     const parsed = JSON.parse(content.trim());
     if (parsed.action) return parsed;
   } catch {}
 
-  // Second try: JSON inside a code block
   const codeBlock = content.match(/```(?:json)?\s*\n?([\s\S]*?)\n?```/);
   if (codeBlock) {
     try {
@@ -221,7 +236,6 @@ function parseAction(content: string): BrowserAction | null {
     } catch {}
   }
 
-  // Third try: find a JSON object anywhere in the text
   const jsonMatch = content.match(/\{[^{}]*"action"\s*:\s*"[^"]+?"[^{}]*\}/);
   if (jsonMatch) {
     try {
@@ -279,28 +293,56 @@ async function executeAction(page: Page, action: BrowserAction): Promise<void> {
 
 export async function browserGetPage(): Promise<ToolResult> {
   try {
-    const ctx = await getBrowser();
+    const { context: ctx, mode } = await getBrowser();
     const pages = ctx.pages();
     if (pages.length === 0) {
-      return { success: true, output: 'No browser pages open.' };
+      return { success: true, output: `Browser connected (${mode}). No pages open.` };
     }
     const page = pages[pages.length - 1];
     const snapshot = await extractPageSnapshot(page);
     return {
       success: true,
-      output: `Current URL: ${page.url()}\n\n${snapshot}`,
+      output: `Browser mode: ${mode}\nCurrent URL: ${page.url()}\n\n${snapshot}`,
     };
   } catch (err) {
     return { success: false, output: '', error: `Browser error: ${(err as Error).message}` };
   }
 }
 
-export async function closeBrowser(): Promise<void> {
-  if (browserInstance) {
-    await browserInstance.close();
-    browserInstance = null;
-    browserContext = null;
+export async function browserStatus(): Promise<ToolResult> {
+  try {
+    // Quick check: is CDP available?
+    const response = await fetch(`${CDP_ENDPOINT}/json/version`, { signal: AbortSignal.timeout(2000) });
+    if (response.ok) {
+      const info = await response.json() as { Browser?: string; webSocketDebuggerUrl?: string };
+      return {
+        success: true,
+        output: `Chrome CDP available at ${CDP_ENDPOINT}\nBrowser: ${info.Browser || 'unknown'}\nWebSocket: ${info.webSocketDebuggerUrl || 'unknown'}\n\nBrowser will connect via CDP with your authenticated sessions.`,
+      };
+    }
+    return {
+      success: true,
+      output: `Chrome CDP not available at ${CDP_ENDPOINT}.\n\nTo enable authenticated browsing, restart Chrome with:\n  open -a "Google Chrome" --args --remote-debugging-port=9222\n\nOr run: npm run chrome (from the open-dispatch directory)\n\nFalling back to standalone Chromium (no saved sessions).`,
+    };
+  } catch {
+    return {
+      success: true,
+      output: `Chrome CDP not available at ${CDP_ENDPOINT}.\n\nTo enable authenticated browsing, restart Chrome with:\n  open -a "Google Chrome" --args --remote-debugging-port=9222\n\nFalling back to standalone Chromium (no saved sessions).`,
+    };
   }
+}
+
+export async function closeBrowser(): Promise<void> {
+  if (browserInstance && connectionMode === 'standalone') {
+    await browserInstance.close();
+  }
+  // For CDP, we disconnect but don't close the user's Chrome
+  if (browserInstance && connectionMode === 'cdp') {
+    browserInstance.close().catch(() => {});
+  }
+  browserInstance = null;
+  browserContext = null;
+  connectionMode = null;
 }
 
 // Export for testing
