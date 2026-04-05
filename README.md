@@ -4,11 +4,11 @@ Local AI agent orchestration for your machine. Dispatch autonomous tasks to loca
 
 ## What is this?
 
-OpenDispatch is a self-hosted alternative to cloud-based AI dispatch systems. It runs entirely on your hardware, using local language models to execute tasks autonomously — shell commands, file operations, web fetching, and more.
+OpenDispatch is a self-hosted alternative to cloud-based AI dispatch systems. It runs entirely on your hardware, using local language models to execute tasks autonomously — shell commands, file operations, browser automation, desktop control, and more.
 
-**Two modes:**
-- **Task mode** — Fire-and-forget. Describe what you want done, and the agent works through it autonomously.
-- **Chat mode** — Interactive conversations with tool access. Like having a local AI assistant that can actually do things on your machine.
+**Chat-first interface**: Talk to it naturally from your iPad or phone. It decides whether to answer directly or spin up a background task. You can manage models, dispatch work, and check on running tasks — all through conversation.
+
+**Background tasks**: Long-running work (code reviews, refactoring, data extraction) runs autonomously while you keep chatting. Pause, resume, cancel, or archive tasks anytime.
 
 ## Requirements
 
@@ -20,50 +20,35 @@ OpenDispatch is a self-hosted alternative to cloud-based AI dispatch systems. It
 ## Quick Start
 
 ```bash
-# Clone and install
 git clone https://github.com/grahamsaa/open-dispatch.git
 cd open-dispatch
 npm install
-
-# Run database migrations
 node --import tsx packages/db/src/migrate.ts
 
-# Enable authenticated browsing (connects to your Chrome sessions)
+# Optional: enable authenticated browsing
 npm run chrome
 
-# Start everything
+# Start server + web UI
 npm run dev
 ```
 
-- **API server**: http://localhost:3456
-- **Web UI**: http://localhost:3000
-- **WebSocket**: ws://localhost:3456/ws
+Open the web UI from any device on your network:
+- **From the Mac**: http://localhost:3001
+- **From iPad/phone**: http://YOUR_MAC_IP:3001
 
-## Authenticated Browsing
-
-OpenDispatch can control your actual Chrome browser, using your existing logins (Chase, Gmail, etc.):
-
-```bash
-# One-time: restart Chrome with CDP debugging enabled
-npm run chrome
-
-# Permanent: auto-launch Chrome with CDP on every login
-npm run chrome:install
-```
-
-Once enabled, `browser_navigate` connects to your Chrome via CDP. The agent opens new tabs in your real browser with all your sessions intact. Check status anytime:
-
-```bash
-curl http://localhost:3456/chrome/status
-```
-
-If Chrome CDP isn't available, the browser tool falls back to a standalone Chromium (no sessions).
+API server runs on port 3456. WebSocket at ws://YOUR_MAC_IP:3456/ws.
 
 ## Usage
 
-### Web UI
+### Chat (primary interface)
 
-Open http://localhost:3000. Use the **Tasks** tab to dispatch autonomous tasks, or the **Chat** tab for interactive conversations.
+Create a new thread and talk naturally:
+
+- *"Review the code in ~/research-agent"* → dispatches a background task
+- *"What's in package.json?"* → reads the file directly and answers
+- *"Load gemma with 64k context"* → switches the loaded model
+- *"How's that code review going?"* → checks the background task status
+- *"Run a full test suite in ~/workspace using the big model with 128k context"* → dispatches with specific model/context
 
 ### API
 
@@ -71,68 +56,79 @@ Open http://localhost:3000. Use the **Tasks** tab to dispatch autonomous tasks, 
 # Dispatch a task
 curl -X POST http://localhost:3456/tasks \
   -H 'Content-Type: application/json' \
-  -d '{"prompt": "List all TypeScript files in ~/myproject and summarize the architecture"}'
+  -d '{"prompt": "Summarize the architecture of ~/myproject"}'
+
+# Load a model with specific context
+curl -X POST http://localhost:3456/models/load \
+  -H 'Content-Type: application/json' \
+  -d '{"model": "qwen3.5-122b", "contextLength": 65536}'
 
 # Check task status
 curl http://localhost:3456/tasks/<task-id>
-
-# Start a conversation
-curl -X POST http://localhost:3456/conversations \
-  -H 'Content-Type: application/json' \
-  -d '{}'
-
-# Send a message
-curl -X POST http://localhost:3456/conversations/<conv-id>/messages \
-  -H 'Content-Type: application/json' \
-  -d '{"content": "What files are in the current directory?"}'
 ```
 
-## Model Routing
+## Authenticated Browsing
 
-OpenDispatch automatically selects the best model for each task based on complexity and capabilities needed. Override with the `model` field in your request.
+OpenDispatch can control your actual Chrome browser with your existing logins:
 
-| Task Type | Default Model | Why |
-|-----------|--------------|-----|
-| Simple transforms | qwen3.5-122b-a10b (MoE) | Fast, 10B active params |
-| General tasks | qwen3.5-122b-a10b | Good balance of speed/quality |
-| Complex reasoning | qwen3.5-122b | Full 122B for harder problems |
-| Vision tasks | qwen2.5-vl-72b | Only vision-capable model |
-| Embeddings | nomic-embed-text-v1.5 | Purpose-built |
+```bash
+npm run chrome              # Restart Chrome with CDP on port 9222
+npm run chrome:install      # Auto-start Chrome with CDP on login
+```
+
+The agent opens new tabs in your real browser — Chase, Gmail, any site you're logged into. Falls back to standalone Chromium if CDP isn't available.
+
+## Model Management
+
+Manage models from the UI (model bar at top) or via chat:
+
+| Natural language | What happens |
+|-----------------|-------------|
+| "use the big model" | Loads qwen3.5-122b |
+| "use the fast model" | Loads qwen3.5-9b-mlx |
+| "use gemma" | Loads gemma-4-31b-it@q8_0 |
+| "64k context" | Sets context window to 65536 |
+| "max context" | Sets context to model's maximum (up to 256k) |
 
 ## Tools
 
-The agent has access to these tools, chosen automatically based on the task:
-
-| Tool | What it does | Model used |
-|------|-------------|------------|
+| Tool | What it does | Cost |
+|------|-------------|------|
 | `shell_exec` | Run shell commands | — |
 | `file_read/write/list/search` | File operations | — |
 | `web_fetch` | HTTP requests | — |
-| `browser_navigate` | Automate web browser (Playwright + DOM analysis) | Local text model (fast) |
-| `browser_get_page` | Inspect current browser page | — |
-| `browser_status` | Check Chrome CDP connection | — |
-| `screen_control` | Control macOS desktop via screenshots + mouse/keyboard | `qwen2.5-vl-72b` (vision) |
-
-**Browser vs Screen**: `browser_navigate` is preferred for web tasks — it reads the DOM directly and uses a fast text model, no vision inference needed. `screen_control` is reserved for native macOS apps and browser edge cases (CAPTCHAs, complex auth flows).
+| `browser_navigate` | Automate Chrome via DOM analysis | Local text model |
+| `screen_control` | Control macOS desktop via vision | qwen2.5-vl-72b |
+| `dispatch_background_task` | Spawn autonomous background work | — |
+| `check_task_status` | Monitor running tasks | — |
+| `load_model` | Switch models/context from chat | — |
 
 ## Architecture
 
 ```
 open-dispatch/
 ├── apps/
-│   ├── server/          # Fastify API + agent loop + WebSocket
+│   ├── server/          # Fastify API + agent loops + WebSocket
 │   │   └── src/
-│   │       ├── agent/   # Task loop + chat loop + pause control
-│   │       ├── llm/     # OpenAI-compatible client (LMStudio)
-│   │       ├── tools/   # Shell, file, web, browser, screen
+│   │       ├── agent/   # Task loop, chat loop, pause control
+│   │       ├── llm/     # LMStudio client, model management
+│   │       ├── tools/   # Shell, file, web, browser, screen, chat
 │   │       ├── queue/   # Task manager with concurrency control
-│   │       └── conversations/  # Chat thread manager
-│   └── web/             # Next.js dashboard (Tasks + Chat tabs)
+│   │       └── conversations/
+│   └── web/             # Next.js — threads | chat | tasks panels
 ├── packages/
 │   ├── shared/          # Types, model registry, tool definitions
 │   └── db/              # SQLite + Drizzle ORM
 └── scripts/             # Chrome CDP launcher + launchd plist
 ```
+
+## Testing
+
+```bash
+npm test    # 124 tests across 16 files
+```
+
+Covers: model routing, tool schemas, all tool executors (shell, file, web, browser, screen), chat tools (dispatch, status, list), task lifecycle (create, archive, delete, cancel), conversation CRUD, LLM fallback parsing, pause control, loop detection.
 
 ## License
 
