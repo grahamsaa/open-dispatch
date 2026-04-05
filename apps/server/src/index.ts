@@ -132,8 +132,13 @@ async function main() {
       return { error: 'content is required' };
     }
 
-    const response = await conversationManager.sendMessage(req.params.id, content);
-    return { response };
+    const result = await conversationManager.sendMessage(req.params.id, content);
+    if (!result.queued) {
+      reply.code(409);
+      return { error: 'A response is already being generated for this conversation' };
+    }
+    reply.code(202);
+    return { status: 'accepted' };
   });
 
   app.delete<{ Params: { id: string } }>('/conversations/:id', async (req) => {
@@ -222,6 +227,7 @@ async function main() {
       ];
       const convEvents = [
         'conversation:created', 'conversation:message', 'conversation:deleted',
+        'conversation:turn_complete', 'conversation:error',
       ];
 
       const handlers: Array<{ source: typeof taskManager; event: string; handler: (data: unknown) => void }> = [];

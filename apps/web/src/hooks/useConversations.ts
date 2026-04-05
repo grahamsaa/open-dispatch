@@ -106,15 +106,30 @@ export function useConversationMessages(conversationId: string | null) {
     }
   });
 
+  // Track when the LLM is actively generating a response
+  useWebSocket((msg) => {
+    if (msg.event === 'conversation:turn_complete' || msg.event === 'conversation:error') {
+      const data = msg.data as { conversationId: string };
+      if (data.conversationId === conversationId) {
+        setSending(false);
+      }
+    }
+  });
+
   const sendMessage = useCallback(async (content: string) => {
     if (!conversationId || sending) return;
     setSending(true);
     try {
-      await api(`/conversations/${conversationId}/messages`, {
+      const result = await api<{ status?: string; error?: string }>(`/conversations/${conversationId}/messages`, {
         method: 'POST',
         body: JSON.stringify({ content }),
       });
-    } finally {
+      // If already processing (409), reset sending state
+      if (result.error) {
+        setSending(false);
+      }
+      // Otherwise, sending stays true until turn_complete or error arrives via WebSocket
+    } catch {
       setSending(false);
     }
   }, [conversationId, sending]);

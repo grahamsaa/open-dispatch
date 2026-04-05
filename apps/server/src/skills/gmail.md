@@ -1,79 +1,122 @@
 # Gmail Skill
 
-How to automate Gmail tasks using browser_script and browser_navigate.
+How to automate Gmail tasks using browser_script. IMPORTANT: All scripts must be wrapped in an IIFE since page.evaluate does not allow bare return statements.
 
 ## Setup
 Gmail URL pattern: `https://mail.google.com/mail/u/{account_index}/`
 - Account 0 is the first signed-in account, 1 is the second, etc.
-- To find the right account, navigate to `https://mail.google.com` and check the page title which shows the email address.
-
-## Search for emails
-Use browser_script to search Gmail:
-```javascript
-// Fill search box and submit
-const searchBox = document.querySelector('input[aria-label="Search mail"]');
-if (searchBox) {
-  searchBox.value = 'from:sender@example.com';
-  searchBox.dispatchEvent(new Event('input', { bubbles: true }));
-  searchBox.closest('form')?.dispatchEvent(new Event('submit', { bubbles: true }));
-}
-```
-Or navigate directly to a search URL:
-`https://mail.google.com/mail/u/0/#search/from%3Asender+name`
-
-## Select all conversations matching a search
-After searching, use browser_script:
-```javascript
-// Step 1: Click the "Select all" checkbox in the toolbar
-const selectAll = document.querySelector('div[aria-label="Select"][role="checkbox"]')
-  || document.querySelector('span.T-Jo-auh'); // fallback selector
-if (selectAll) selectAll.click();
-```
-
-Then look for the "Select all conversations that match this search" link and click it:
-```javascript
-// Step 2: Click "Select all conversations that match this search"
-const selectAllLink = [...document.querySelectorAll('span')].find(el =>
-  el.textContent?.includes('Select all conversations'));
-if (selectAllLink) selectAllLink.click();
-```
-
-## Delete selected emails
-```javascript
-// Click the delete button (trash icon)
-const deleteBtn = document.querySelector('div[aria-label="Delete"]')
-  || document.querySelector('button[aria-label="Delete"]');
-if (deleteBtn) deleteBtn.click();
-```
+- To verify the right account, check the page title after navigating — it shows the email address.
 
 ## Complete workflow: search and delete all from a sender
-1. Navigate to: `https://mail.google.com/mail/u/0/#search/from%3A{encoded_sender}`
-2. Wait 3 seconds for results to load
-3. Run browser_script to click "Select all" checkbox
-4. Wait 1 second
-5. Run browser_script to click "Select all conversations that match this search"
-6. Wait 1 second
-7. Run browser_script to click Delete button
-8. Verify with browser_get_page that the deletion happened
 
-## Apply a label
+Follow these steps IN ORDER. Do not skip steps or combine them. Wait for each step to succeed before proceeding.
+
+### Step 1: Navigate to search results
+Use browser_script to go to the search URL:
 ```javascript
-// Click "Label" button, then select the label
-document.querySelector('div[aria-label="Labels"]')?.click();
-// Wait, then click the specific label in the dropdown
+(function() { window.location.href = 'https://mail.google.com/mail/u/0/#search/from%3A{encoded_sender}'; return 'Navigating to search'; })()
+```
+Then use a separate browser_script call to wait and verify:
+```javascript
+(function() { return document.title + ' | URL: ' + window.location.href; })()
 ```
 
-## Mark as read
+### Step 2: Click the "Select all" checkbox
+This selects conversations on the current page (up to 50).
 ```javascript
-document.querySelector('div[aria-label="Mark as read"]')?.click();
+(function() {
+  var cb = document.querySelector('div[role="checkbox"][aria-label="Select"]')
+    || document.querySelector('div.T-Jo-J7[role="checkbox"]')
+    || document.querySelector('span.T-Jo-auh');
+  if (cb) { cb.click(); return 'Clicked select-all checkbox'; }
+  return 'ERROR: Could not find select-all checkbox';
+})()
 ```
 
-## Archive
+### Step 3: Wait 1-2 seconds, then click "Select all conversations that match this search"
+After clicking the checkbox, Gmail shows a yellow bar with a link like "Select all conversations that match this search". You MUST click it to select ALL results beyond the first 50.
 ```javascript
-document.querySelector('div[aria-label="Archive"]')?.click();
+(function() {
+  var links = document.querySelectorAll('span a');
+  for (var i = 0; i < links.length; i++) {
+    if (links[i].textContent && links[i].textContent.indexOf('Select all') !== -1) {
+      links[i].click();
+      return 'Clicked: ' + links[i].textContent.trim();
+    }
+  }
+  var allEls = document.querySelectorAll('span, a, div');
+  for (var j = 0; j < allEls.length; j++) {
+    var text = allEls[j].textContent || '';
+    if (text.indexOf('Select all conversations') !== -1 && allEls[j].offsetParent !== null) {
+      allEls[j].click();
+      return 'Clicked (fallback): ' + text.trim().substring(0, 80);
+    }
+  }
+  return 'No "Select all conversations" link found - may only have <=50 results (OK to proceed)';
+})()
+```
+NOTE: If there are 50 or fewer results, this link may NOT appear. That is fine — proceed to deletion.
+
+### Step 4: Wait 1 second, then click Delete
+```javascript
+(function() {
+  var del = document.querySelector('div[aria-label="Delete"]')
+    || document.querySelector('button[aria-label="Delete"]');
+  if (del) { del.click(); return 'Clicked delete button'; }
+  return 'ERROR: Could not find delete button';
+})()
+```
+
+### Step 5: Handle confirmation dialog (if any)
+If deleting many conversations, Gmail may show a confirmation dialog. Click OK/Confirm.
+```javascript
+(function() {
+  var okBtn = document.querySelector('button[name="ok"]');
+  if (!okBtn) {
+    var buttons = document.querySelectorAll('button');
+    for (var i = 0; i < buttons.length; i++) {
+      if (buttons[i].textContent && buttons[i].textContent.trim() === 'OK') { okBtn = buttons[i]; break; }
+    }
+  }
+  if (okBtn) { okBtn.click(); return 'Confirmed deletion'; }
+  return 'No confirmation dialog (already deleted)';
+})()
+```
+
+### Step 6: Verify
+Wait 2 seconds, then check the page to confirm the search now shows fewer or no results. If results remain, REPEAT from Step 2 (Gmail may require multiple passes for large mailboxes).
+
+## Search for emails
+Navigate directly to a search URL — this is the most reliable method:
+`https://mail.google.com/mail/u/0/#search/from%3A{encoded_sender}`
+
+URL encoding: spaces become `+`, special chars use `%XX`. Examples:
+- `from:john@example.com` → `from%3Ajohn%40example.com`
+- `from:Accurate Arms USA` → `from%3AAccurate+Arms+USA`
+
+## Other operations
+
+### Apply a label
+```javascript
+(function() { document.querySelector('div[aria-label="Labels"]')?.click(); return 'Opened labels dropdown'; })()
+```
+
+### Mark as read
+```javascript
+(function() { document.querySelector('div[aria-label="Mark as read"]')?.click(); return 'Marked as read'; })()
+```
+
+### Archive
+```javascript
+(function() { document.querySelector('div[aria-label="Archive"]')?.click(); return 'Archived'; })()
 ```
 
 ## Multi-account handling
 - Check current account: look at page title or URL (`/mail/u/0/` vs `/mail/u/1/`)
 - Switch accounts by navigating to `https://mail.google.com/mail/u/{index}/`
-- The account index is determined by sign-in order, not alphabetically
+
+## Troubleshooting
+- If selectors don't work, use browser_get_page to see current page state
+- Gmail changes its DOM frequently — if a selector fails, try aria-label selectors first (most stable)
+- Scripts with bare `return` will fail with SyntaxError — ALWAYS use `(function() { ... })()`
+- If the page seems empty, wait longer (2-3 seconds) — Gmail loads asynchronously

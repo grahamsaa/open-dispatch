@@ -27,6 +27,12 @@ async function pickDefaultModel(preferred?: string): Promise<string> {
 }
 
 export class ConversationManager extends EventEmitter {
+  private activeTurns = new Set<string>(); // conversation IDs with a turn in progress
+
+  isProcessing(conversationId: string): boolean {
+    return this.activeTurns.has(conversationId);
+  }
+
   async create(input: CreateConversationInput): Promise<Conversation> {
     const now = Date.now();
     const model = await pickDefaultModel(input.model);
@@ -70,9 +76,14 @@ export class ConversationManager extends EventEmitter {
       .all() as ConversationMessage[];
   }
 
-  async sendMessage(conversationId: string, content: string): Promise<string> {
+  async sendMessage(conversationId: string, content: string): Promise<{ queued: boolean }> {
     const conv = await this.get(conversationId);
     if (!conv) throw new Error('Conversation not found');
+
+    // Prevent concurrent turns on the same conversation
+    if (this.activeTurns.has(conversationId)) {
+      return { queued: false };
+    }
 
     // Save user message
     const userMsgId = nanoid();
@@ -93,50 +104,90 @@ export class ConversationManager extends EventEmitter {
       content,
     });
 
-    // Build message history for the LLM
+    // Update title from first message if still "New Conversation"
     const dbMessages = await this.getMessages(conversationId);
-    const history = this.buildChatHistory(dbMessages.slice(0, -1)); // exclude the message we just inserted (it's passed separately)
+    if (conv.title === 'New Conversation' && dbMessages.length <= 1) {
+      const title = content.slice(0, 80) + (content.length > 80 ? '...' : '');
+      db.update(conversations).set({ title, updatedAt: Date.now() }).where(eq(conversations.id, conversationId)).run();
+    }
 
-    const events = new EventEmitter();
+    // Run the chat turn asynchronously — results come via WebSocket
+    this.activeTurns.add(conversationId);
+    this.runTurnAsync(conversationId, conv, dbMessages, content).catch(() => {});
 
-    events.on('chat:step', (step: ChatStepEvent) => {
-      const msgId = nanoid();
+    return { queued: true };
+  }
+
+  private async runTurnAsync(
+    conversationId: string,
+    conv: Conversation,
+    dbMessages: ConversationMessage[],
+    content: string,
+  ): Promise<void> {
+    try {
+      // Build message history (exclude the user message we just inserted)
+      const history = this.buildChatHistory(dbMessages.slice(0, -1));
+
+      const events = new EventEmitter();
+
+      events.on('chat:step', (step: ChatStepEvent) => {
+        const msgId = nanoid();
+        db.insert(conversationMessages).values({
+          id: msgId,
+          conversationId: step.conversationId,
+          role: step.type,
+          content: step.content,
+          toolName: step.toolName || null,
+          toolCallId: step.toolCallId || null,
+          createdAt: Date.now(),
+        }).run();
+
+        this.emit('conversation:message', {
+          conversationId: step.conversationId,
+          id: msgId,
+          role: step.type,
+          content: step.content,
+          toolName: step.toolName,
+          toolCallId: step.toolCallId,
+        });
+      });
+
+      await runChatTurn(history, content, {
+        conversationId,
+        model: conv.model || 'qwen3.5-122b-a10b',
+        workingDirectory: conv.workingDirectory || homedir(),
+        events,
+      });
+
+      db.update(conversations).set({ updatedAt: Date.now() }).where(eq(conversations.id, conversationId)).run();
+      this.emit('conversation:turn_complete', { conversationId });
+    } catch (err) {
+      const errorMsg = (err as Error).message || 'Chat turn failed';
+      console.error(`Chat turn failed for ${conversationId}: ${errorMsg}`);
+
+      // Save error as a visible message so the user sees it
+      const errorMsgId = nanoid();
       db.insert(conversationMessages).values({
-        id: msgId,
-        conversationId: step.conversationId,
-        role: step.type,
-        content: step.content,
-        toolName: step.toolName || null,
-        toolCallId: step.toolCallId || null,
+        id: errorMsgId,
+        conversationId,
+        role: 'assistant',
+        content: `Error: ${errorMsg}. You can try sending your message again.`,
+        toolName: null,
+        toolCallId: null,
         createdAt: Date.now(),
       }).run();
 
       this.emit('conversation:message', {
-        conversationId: step.conversationId,
-        id: msgId,
-        role: step.type,
-        content: step.content,
-        toolName: step.toolName,
-        toolCallId: step.toolCallId,
+        conversationId,
+        id: errorMsgId,
+        role: 'assistant',
+        content: `Error: ${errorMsg}. You can try sending your message again.`,
       });
-    });
 
-    const response = await runChatTurn(history, content, {
-      conversationId,
-      model: conv.model || 'qwen3.5-122b-a10b',
-      workingDirectory: conv.workingDirectory || homedir(),
-      events,
-    });
-
-    // Update conversation title from first message if it's still "New Conversation"
-    if (conv.title === 'New Conversation' && dbMessages.length <= 1) {
-      const title = content.slice(0, 80) + (content.length > 80 ? '...' : '');
-      db.update(conversations).set({ title, updatedAt: Date.now() }).where(eq(conversations.id, conversationId)).run();
-    } else {
-      db.update(conversations).set({ updatedAt: Date.now() }).where(eq(conversations.id, conversationId)).run();
+      this.emit('conversation:error', { conversationId, error: errorMsg });
+    } finally {
+      this.activeTurns.delete(conversationId);
     }
-
-    return response;
   }
 
   async delete(id: string): Promise<void> {
