@@ -157,11 +157,12 @@ function ChatPanel({ conversationId, onViewTask }: { conversationId: string; onV
       <div ref={scrollRef} className="flex-1 overflow-y-auto p-4 space-y-3">
         {displayMessages.map((msg) => (
           <div key={msg.id}
-            className={`rounded-lg p-3 text-sm max-w-[90%] ${
+            className={`rounded-lg p-3 text-sm max-w-[90%] group relative ${
               msg.role === 'user' ? 'bg-blue-900/30 border border-blue-800/50 ml-auto'
               : msg.role === 'assistant' ? 'bg-gray-900 border border-gray-800'
               : 'bg-gray-900/50 border border-gray-800/50 text-xs text-gray-500'
             }`}>
+            <CopyButton text={msg.content} />
             {msg.role === 'tool_summary' ? (
               <details>
                 <summary className="cursor-pointer text-gray-500 text-xs">
@@ -374,6 +375,45 @@ function TaskDetail({ taskId }: { taskId: string }) {
         )}
       </div>
     </div>
+  );
+}
+
+// ═══════════════════════════════════════════════
+// Copy Button
+// ═══════════════════════════════════════════════
+
+function CopyButton({ text }: { text: string }) {
+  const [copied, setCopied] = useState(false);
+
+  async function handleCopy() {
+    try {
+      await navigator.clipboard.writeText(text);
+      setCopied(true);
+      setTimeout(() => setCopied(false), 1500);
+    } catch {
+      // Fallback for iPad/Safari where clipboard API may be restricted
+      const el = document.createElement('textarea');
+      el.value = text;
+      el.style.position = 'fixed';
+      el.style.opacity = '0';
+      document.body.appendChild(el);
+      el.select();
+      document.execCommand('copy');
+      document.body.removeChild(el);
+      setCopied(true);
+      setTimeout(() => setCopied(false), 1500);
+    }
+  }
+
+  return (
+    <button onClick={handleCopy}
+      className={`absolute top-2 right-2 px-2 py-1 rounded text-[10px] transition-all min-w-[44px] min-h-[28px] ${
+        copied
+          ? 'bg-green-900/50 text-green-400'
+          : 'bg-gray-800/80 text-gray-500 md:opacity-0 md:group-hover:opacity-100'
+      }`}>
+      {copied ? 'Copied' : 'Copy'}
+    </button>
   );
 }
 
