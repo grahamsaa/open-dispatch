@@ -1,9 +1,16 @@
 import { readFile, writeFile, mkdir } from 'node:fs/promises';
 import { dirname } from 'node:path';
+import { homedir } from 'node:os';
 import { glob } from 'node:fs/promises';
 import type { ToolResult } from '@opendispatch/shared';
 
 const MAX_READ = 50_000;
+
+function expandHome(p: string): string {
+  if (p.startsWith('~/')) return homedir() + p.slice(1);
+  if (p === '~') return homedir();
+  return p;
+}
 
 interface FileReadArgs {
   path: string;
@@ -30,7 +37,7 @@ interface FileSearchArgs {
 
 export async function fileRead(args: FileReadArgs): Promise<ToolResult> {
   try {
-    const content = await readFile(args.path, 'utf-8');
+    const content = await readFile(expandHome(args.path), 'utf-8');
     const lines = content.split('\n');
     const offset = args.offset ?? 0;
     const limit = args.limit ?? 500;
@@ -52,8 +59,9 @@ export async function fileRead(args: FileReadArgs): Promise<ToolResult> {
 
 export async function fileWrite(args: FileWriteArgs): Promise<ToolResult> {
   try {
-    await mkdir(dirname(args.path), { recursive: true });
-    await writeFile(args.path, args.content, 'utf-8');
+    const path = expandHome(args.path);
+    await mkdir(dirname(path), { recursive: true });
+    await writeFile(path, args.content, 'utf-8');
     return { success: true, output: `Wrote ${args.content.length} bytes to ${args.path}` };
   } catch (err) {
     return { success: false, output: '', error: `Failed to write file: ${(err as Error).message}` };
@@ -62,7 +70,7 @@ export async function fileWrite(args: FileWriteArgs): Promise<ToolResult> {
 
 export async function fileList(args: FileListArgs, defaultCwd: string): Promise<ToolResult> {
   try {
-    const cwd = args.cwd || defaultCwd;
+    const cwd = expandHome(args.cwd || defaultCwd);
     const matches: string[] = [];
     for await (const entry of glob(args.pattern, { cwd })) {
       matches.push(entry as string);
@@ -85,7 +93,7 @@ export async function fileSearch(args: FileSearchArgs, defaultCwd: string): Prom
     const { promisify } = await import('node:util');
     const execAsync = promisify(exec);
 
-    const searchPath = args.path || defaultCwd;
+    const searchPath = expandHome(args.path || defaultCwd);
     const maxResults = args.maxResults ?? 50;
     const globFlag = args.glob ? `--glob '${args.glob}'` : '';
 

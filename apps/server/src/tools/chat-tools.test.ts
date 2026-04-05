@@ -1,5 +1,15 @@
-import { describe, it, expect } from 'vitest';
+import { describe, it, expect, afterEach } from 'vitest';
 import { executeChatTool } from './chat-tools.js';
+import { taskManager } from '../queue/manager.js';
+
+const createdTaskIds: string[] = [];
+
+afterEach(async () => {
+  for (const id of createdTaskIds) {
+    await taskManager.deleteTask(id).catch(() => {});
+  }
+  createdTaskIds.length = 0;
+});
 
 describe('executeChatTool', () => {
   it('returns null for non-chat tools', async () => {
@@ -22,6 +32,7 @@ describe('executeChatTool', () => {
     const data = JSON.parse(result!.output);
     expect(data.taskId).toBeTruthy();
     expect(data.status).toBe('pending');
+    createdTaskIds.push(data.taskId);
   });
 
   it('lists background tasks', async () => {

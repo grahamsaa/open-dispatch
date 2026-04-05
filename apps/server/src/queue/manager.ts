@@ -14,6 +14,21 @@ export class TaskManager extends EventEmitter {
   private abortControllers = new Map<string, AbortController>();
   private pauseControllers = new Map<string, PauseController>();
 
+  constructor() {
+    super();
+    // On startup, reset any orphaned "running" tasks to "failed".
+    // These are leftovers from a previous server instance that crashed or was restarted.
+    const orphaned = db.select().from(tasks).where(eq(tasks.status, 'running')).all();
+    if (orphaned.length > 0) {
+      for (const t of orphaned) {
+        db.update(tasks).set({ status: 'failed', error: 'Server restarted while task was running', updatedAt: Date.now() }).where(eq(tasks.id, t.id)).run();
+      }
+      console.log(`Reset ${orphaned.length} orphaned running task(s) to failed.`);
+    }
+    // Kick off queue processing for any pending tasks from a previous session
+    setTimeout(() => this.processQueue(), 1000);
+  }
+
   async createTask(input: CreateTaskInput): Promise<Task> {
     const now = Date.now();
     const routing = routeTask({

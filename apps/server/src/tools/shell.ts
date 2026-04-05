@@ -1,8 +1,15 @@
 import { exec } from 'node:child_process';
+import { homedir } from 'node:os';
 import type { ToolResult } from '@opendispatch/shared';
 
 const MAX_OUTPUT = 50_000;
 const DEFAULT_TIMEOUT = 30_000;
+
+function expandHome(p: string): string {
+  if (p.startsWith('~/')) return homedir() + p.slice(1);
+  if (p === '~') return homedir();
+  return p;
+}
 
 interface ShellExecArgs {
   command: string;
@@ -11,7 +18,7 @@ interface ShellExecArgs {
 }
 
 export async function shellExec(args: ShellExecArgs, defaultCwd: string): Promise<ToolResult> {
-  const cwd = args.cwd || defaultCwd;
+  const cwd = expandHome(args.cwd || defaultCwd);
   const timeout = args.timeout || DEFAULT_TIMEOUT;
 
   return new Promise((resolve) => {
