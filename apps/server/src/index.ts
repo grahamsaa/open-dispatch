@@ -171,17 +171,37 @@ async function main() {
         return { ok: true, message: 'Chrome CDP already running.' };
       }
 
-      // Try to quit existing Chrome and relaunch with CDP
-      await execAsync('osascript -e \'tell application "Google Chrome" to quit\'').catch(() => {});
-      await new Promise(r => setTimeout(r, 2000));
-      await execAsync('open -a "Google Chrome" --args --remote-debugging-port=9222');
+      // Kill any existing Chrome
+      await execAsync('pkill -f "Google Chrome"').catch(() => {});
+      await new Promise(r => setTimeout(r, 3000));
+
+      // Ensure profile directory exists with copied sessions
+      const homeDir = process.env.HOME || '/Users/graham';
+      const chromeData = `${homeDir}/.opendispatch/chrome-data`;
+      const defaultProfile = `${homeDir}/Library/Application Support/Google/Chrome/Default`;
+
+      await execAsync(`mkdir -p "${chromeData}"`);
+
+      // Copy Chrome profile if we haven't already (preserves cookies/sessions)
+      try {
+        await execAsync(`test -d "${chromeData}/Default"`);
+      } catch {
+        await execAsync(`cp -r "${defaultProfile}" "${chromeData}/Default"`).catch(() => {});
+        await execAsync(`cp "${homeDir}/Library/Application Support/Google/Chrome/Local State" "${chromeData}/Local State"`).catch(() => {});
+      }
+
+      // Launch Chrome directly with CDP and explicit user-data-dir
+      execAsync(
+        `/Applications/Google\\ Chrome.app/Contents/MacOS/Google\\ Chrome --remote-debugging-port=9222 --user-data-dir="${chromeData}"`,
+        { timeout: 0 }
+      ).catch(() => {}); // Fire and forget — Chrome runs in background
 
       // Wait for CDP to become available
-      for (let i = 0; i < 10; i++) {
+      for (let i = 0; i < 15; i++) {
         await new Promise(r => setTimeout(r, 1000));
         const resp = await fetch(`${CDP_ENDPOINT}/json/version`, { signal: AbortSignal.timeout(1000) }).catch(() => null);
         if (resp?.ok) {
-          return { ok: true, message: 'Chrome relaunched with CDP enabled.' };
+          return { ok: true, message: 'Chrome launched with CDP enabled.' };
         }
       }
 
