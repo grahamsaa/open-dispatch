@@ -115,8 +115,8 @@ function ThreadList({ selectedId, onSelect }: { selectedId: string | null; onSel
               <p className="text-sm text-gray-200 truncate">{conv.title}</p>
               <p className="text-xs text-gray-600 mt-0.5">{conv.model || 'auto'}</p>
             </button>
-            <button onClick={() => deleteConversation(conv.id)}
-              className="text-gray-700 hover:text-red-400 px-3 py-2 text-lg">&times;</button>
+            <button onClick={(e) => { e.stopPropagation(); deleteConversation(conv.id); }}
+              className="text-gray-700 hover:text-red-400 px-4 py-3 text-lg min-w-[44px] min-h-[44px] flex items-center justify-center">&times;</button>
           </div>
         ))}
       </div>

@@ -60,8 +60,16 @@ export function useConversations() {
   }, []);
 
   const deleteConversation = useCallback(async (id: string) => {
-    await api(`/conversations/${id}`, { method: 'DELETE' });
-  }, []);
+    // Optimistic removal — don't wait for WebSocket
+    setConversations(prev => prev.filter(c => c.id !== id));
+    try {
+      await api(`/conversations/${id}`, { method: 'DELETE' });
+    } catch (err) {
+      console.error('Failed to delete conversation:', err);
+      // Refetch to restore if delete failed
+      fetchConversations();
+    }
+  }, [fetchConversations]);
 
   return { conversations, loading, createConversation, deleteConversation, refetch: fetchConversations };
 }

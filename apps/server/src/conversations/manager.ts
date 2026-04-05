@@ -3,19 +3,36 @@ import { EventEmitter } from 'node:events';
 import { eq } from 'drizzle-orm';
 import { db, conversations, conversationMessages } from '@opendispatch/db';
 import { routeTask } from '@opendispatch/shared';
+import { getModelsDetailed } from '../llm/models.js';
 import { runChatTurn, type ChatStepEvent } from '../agent/chat.js';
 import type { Conversation, ConversationMessage, CreateConversationInput, ChatMessage } from '@opendispatch/shared';
 import { homedir } from 'node:os';
 
+async function pickDefaultModel(preferred?: string): Promise<string> {
+  if (preferred) return preferred;
+
+  // Use the currently loaded model (if any) rather than the router's theoretical pick
+  try {
+    const models = await getModelsDetailed();
+    const loaded = models
+      .filter(m => m.state === 'loaded' && (m.loadedContextLength || 0) > 4096)
+      .sort((a, b) => (b.loadedContextLength || 0) - (a.loadedContextLength || 0));
+    if (loaded.length > 0) return loaded[0].id;
+  } catch {}
+
+  // Fallback to router
+  return routeTask({ complexity: 'medium' }).modelId;
+}
+
 export class ConversationManager extends EventEmitter {
   async create(input: CreateConversationInput): Promise<Conversation> {
     const now = Date.now();
-    const routing = routeTask({ preferredModel: input.model, complexity: 'medium' });
+    const model = await pickDefaultModel(input.model);
 
     const conv: Conversation = {
       id: nanoid(),
       title: input.title || 'New Conversation',
-      model: routing.modelId,
+      model,
       workingDirectory: input.workingDirectory || homedir(),
       createdAt: now,
       updatedAt: now,
