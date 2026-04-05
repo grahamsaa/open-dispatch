@@ -167,3 +167,65 @@ export const TOOL_DEFINITIONS: ToolDefinition[] = [
     },
   },
 ];
+
+// Tools only available in chat mode (not in fire-and-forget task mode)
+export const CHAT_EXTRA_TOOLS: ToolDefinition[] = [
+  {
+    type: 'function',
+    function: {
+      name: 'dispatch_background_task',
+      description: 'Dispatch a task to run autonomously in the background. Use this when the user asks you to do something that will take a while (code reviews, refactoring, builds, data extraction, etc.) and they want to keep chatting while it runs. The task runs independently with its own agent loop. You can check on it later with check_task_status.',
+      parameters: {
+        type: 'object',
+        properties: {
+          prompt: { type: 'string', description: 'Detailed description of the task. Be specific — the background agent has no context from this conversation.' },
+          model: { type: 'string', description: 'Model to use. Examples: "qwen3.5-122b-a10b" (fast MoE, default), "qwen3.5-122b" (full 122B, complex tasks), "qwen3.5-9b-mlx" (fast small), "gemma-4-31b-it@q8_0", "llama-3.3-70b". Leave empty for auto-routing.' },
+          contextLength: { type: 'number', description: 'Context window size in tokens. Examples: 32768 (32k), 65536 (64k), 131072 (128k). Leave empty for current loaded context.' },
+          workingDirectory: { type: 'string', description: 'Working directory for the task (default: user home)' },
+        },
+        required: ['prompt'],
+      },
+    },
+  },
+  {
+    type: 'function',
+    function: {
+      name: 'check_task_status',
+      description: 'Check the status and result of a background task. Returns status (pending/running/completed/failed), result if done, error if failed, and step count.',
+      parameters: {
+        type: 'object',
+        properties: {
+          taskId: { type: 'string', description: 'The task ID returned by dispatch_background_task' },
+        },
+        required: ['taskId'],
+      },
+    },
+  },
+  {
+    type: 'function',
+    function: {
+      name: 'list_background_tasks',
+      description: 'List all active and recent background tasks with their statuses.',
+      parameters: {
+        type: 'object',
+        properties: {},
+        required: [],
+      },
+    },
+  },
+  {
+    type: 'function',
+    function: {
+      name: 'load_model',
+      description: 'Load a specific LLM model in LMStudio with a given context window size. Use when the user asks to switch models or change the context window. Unloads the current model first.',
+      parameters: {
+        type: 'object',
+        properties: {
+          model: { type: 'string', description: 'Model ID to load. Available: qwen3.5-122b-a10b, qwen3.5-122b, qwen3.5-9b-mlx, qwen3-32b-mlx, gemma-4-31b-it@q8_0, llama-3.3-70b, hermes-3-70b, qwen3-235b-thinking, qwen2.5-vl-72b, wizardlm-2-8x22b' },
+          contextLength: { type: 'number', description: 'Context window in tokens. Common values: 32768 (32k), 65536 (64k), 131072 (128k), 262144 (256k)' },
+        },
+        required: ['model'],
+      },
+    },
+  },
+];
