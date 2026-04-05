@@ -50,27 +50,25 @@ export async function chatCompletion(opts: CompletionOptions): Promise<Completio
     params.messages = messages as OpenAI.Chat.ChatCompletionMessageParam[];
   }
 
-  // Retry up to 3 times on LMStudio connection failures or timeouts
-  const LLM_TIMEOUT = 120_000; // 2 minutes — if no response, assume hung
-  let response: OpenAI.Chat.ChatCompletion;
-  for (let attempt = 0; attempt < 3; attempt++) {
+  // Retry up to 2 times on LMStudio connection failures or timeouts
+  // SDK timeout (120s) handles hung connections via AbortController
+  const MAX_RETRIES = 2;
+  let response: OpenAI.Chat.ChatCompletion | undefined;
+  for (let attempt = 0; attempt <= MAX_RETRIES; attempt++) {
     try {
-      response = await Promise.race([
-        llm.chat.completions.create(params),
-        new Promise<never>((_, reject) =>
-          setTimeout(() => reject(new Error('LLM request timed out after 120s')), LLM_TIMEOUT)
-        ),
-      ]);
+      response = await llm.chat.completions.create(params);
       break;
     } catch (err) {
       const msg = (err as Error).message || '';
-      console.error(`LLM request failed (attempt ${attempt + 1}/3): ${msg}`);
-      if (attempt === 2) throw err;
+      console.error(`LLM request failed (attempt ${attempt + 1}/${MAX_RETRIES + 1}): ${msg}`);
+      if (attempt === MAX_RETRIES) throw err;
       // Wait before retry — LMStudio may need a moment to recover
       await new Promise(r => setTimeout(r, 3000 * (attempt + 1)));
     }
   }
-  const choice = response!.choices[0];
+
+  if (!response) throw new Error('LLM request failed after all retries');
+  const choice = response.choices[0];
 
   if (!choice) {
     return { content: null, toolCalls: [] };
