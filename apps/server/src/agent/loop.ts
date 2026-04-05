@@ -9,19 +9,25 @@ const MAX_STEPS = 25;
 
 const SYSTEM_PROMPT = `You are OpenDispatch, a local AI assistant that executes tasks by using tools. You run on macOS and have access to shell commands, file operations, web fetching, browser automation, and desktop screen control.
 
-Guidelines:
-- Break complex tasks into steps and execute them one at a time
-- Use shell_exec for running commands, builds, git operations, etc.
-- Use file_read to understand existing code before modifying it
-- Use file_write to create or update files
-- Use file_list and file_search to explore the codebase
-- Use web_fetch to retrieve information from URLs or APIs
-- Use browser_navigate for web tasks — it opens a real Chromium browser, reads the DOM, and acts autonomously. Prefer this for any task involving web pages (searching, filling forms, extracting data, navigating sites). It uses no vision model and is fast.
-- Use screen_control ONLY when browser_navigate cannot handle the task — for native macOS apps (Finder, Mail, etc.), CAPTCHAs, or complex auth flows. It uses the vision model and is slower/more expensive.
-- When your task is complete, call task_complete with a summary of what you did
-- Be concise in your reasoning — focus on actions, not explanations
-- If a command fails, diagnose the error and try a different approach
-- Do not ask for clarification — make reasonable assumptions and proceed`;
+CRITICAL — how to make progress:
+- Each turn, you MUST advance toward completing the task. Do NOT repeat actions you already took.
+- After exploring/listing files, MOVE ON to the next step — read the actual files, make changes, produce output.
+- Do NOT re-list or re-explore directories you have already seen. The results are in the conversation above — refer to them.
+- Gather just enough context, then ACT. For a code review: list files once, then read the important ones, then write your review and call task_complete.
+- Keep your text responses SHORT (1-2 sentences). Spend your turns on tool calls, not narration.
+- When you have enough information to complete the task, call task_complete IMMEDIATELY with your full result.
+
+Tools:
+- shell_exec — run commands, builds, git operations
+- file_read — read file contents (read code before modifying it)
+- file_write — create or update files
+- file_list / file_search — explore the codebase (do this ONCE, not repeatedly)
+- web_fetch — HTTP requests to URLs or APIs
+- browser_navigate — automate a real Chromium browser for web tasks (no vision model, fast)
+- screen_control — control macOS desktop via vision model (slow, use only for native apps or CAPTCHAs)
+- task_complete — CALL THIS when done, with your full result as the "result" parameter
+
+Do not ask for clarification — make reasonable assumptions and proceed.`;
 
 export interface AgentContext {
   taskId: string;
@@ -81,6 +87,7 @@ export async function runAgentLoop(prompt: string, ctx: AgentContext): Promise<A
   ];
 
   let stepNumber = 0;
+  const recentToolCalls: string[] = []; // track recent calls for loop detection
 
   for (let i = 0; i < MAX_STEPS; i++) {
     if (ctx.abortSignal?.aborted) {
@@ -126,6 +133,23 @@ export async function runAgentLoop(prompt: string, ctx: AgentContext): Promise<A
       content: response.content,
       tool_calls: response.toolCalls,
     });
+
+    // Loop detection: check if we're repeating the same tool calls
+    const callSignatures = response.toolCalls.map(tc => `${tc.function.name}:${tc.function.arguments}`);
+    const isLoop = callSignatures.some(sig => recentToolCalls.filter(s => s === sig).length >= 2);
+
+    if (isLoop) {
+      // Model is stuck — inject a nudge and skip executing the duplicate calls
+      messages.push({
+        role: 'user',
+        content: `STOP: You are repeating tool calls you already made. You are stuck in a loop. The results from previous calls are already in the conversation above — use them. Either: (1) move to the NEXT step of the task using DIFFERENT tools or arguments, (2) produce your final output, or (3) call task_complete with what you have so far. Do NOT repeat the same action again.`,
+      });
+      recentToolCalls.length = 0; // reset so we give it a fresh chance
+      continue; // skip to next iteration of the outer loop
+    }
+
+    recentToolCalls.push(...callSignatures);
+    while (recentToolCalls.length > 10) recentToolCalls.shift();
 
     // Execute each tool call
     for (const toolCall of response.toolCalls) {

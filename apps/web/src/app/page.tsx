@@ -3,6 +3,7 @@
 import { useState } from 'react';
 import { useTasks, useTaskSteps } from '@/hooks/useTasks';
 import { useConversations, useConversationMessages } from '@/hooks/useConversations';
+import { useModels } from '@/hooks/useModels';
 import { api } from '@/lib/api';
 
 const STATUS_COLORS: Record<string, string> = {
@@ -21,6 +22,7 @@ export default function Home() {
 
   return (
     <div>
+      <ModelBar />
       <div className="flex gap-1 mb-6 bg-gray-900 rounded-lg p-1 w-fit">
         <button
           onClick={() => setMode('tasks')}
@@ -57,14 +59,20 @@ function TasksView() {
   const [selectedTask, setSelectedTask] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
 
+  const [error, setError] = useState<string | null>(null);
+
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
     if (!prompt.trim() || submitting) return;
     setSubmitting(true);
+    setError(null);
     try {
       const task = await createTask(prompt.trim(), model || undefined, cwd || undefined);
       setPrompt('');
       setSelectedTask(task.id);
+    } catch (err) {
+      console.error('Failed to create task:', err);
+      setError((err as Error).message);
     } finally {
       setSubmitting(false);
     }
@@ -93,20 +101,29 @@ function TasksView() {
             placeholder="Describe a task for your local AI agent..."
             className="w-full bg-gray-900 border border-gray-700 rounded-lg p-4 text-gray-100 placeholder-gray-500 resize-none focus:outline-none focus:border-blue-500 transition-colors"
             rows={4}
+            autoComplete="off"
+            autoCorrect="off"
+            autoCapitalize="off"
+            spellCheck={false}
             onKeyDown={(e) => { if (e.key === 'Enter' && e.metaKey) handleSubmit(e); }}
           />
           <div className="flex gap-3">
             <input type="text" value={model} onChange={(e) => setModel(e.target.value)}
               placeholder="Model (auto-routed)"
+              autoComplete="off" autoCorrect="off" autoCapitalize="off" spellCheck={false}
               className="flex-1 bg-gray-900 border border-gray-700 rounded-lg px-3 py-2 text-sm text-gray-300 placeholder-gray-600 focus:outline-none focus:border-blue-500" />
             <input type="text" value={cwd} onChange={(e) => setCwd(e.target.value)}
               placeholder="Working directory"
+              autoComplete="off" autoCorrect="off" autoCapitalize="off" spellCheck={false}
               className="flex-1 bg-gray-900 border border-gray-700 rounded-lg px-3 py-2 text-sm text-gray-300 placeholder-gray-600 focus:outline-none focus:border-blue-500" />
           </div>
           <button type="submit" disabled={!prompt.trim() || submitting}
             className="w-full bg-blue-600 hover:bg-blue-500 disabled:bg-gray-700 disabled:text-gray-500 text-white font-medium py-2.5 rounded-lg transition-colors">
             {submitting ? 'Creating...' : 'Dispatch Task'}
           </button>
+          {error && (
+            <p className="text-sm text-red-400 bg-red-900/20 rounded-lg px-3 py-2">{error}</p>
+          )}
         </form>
 
         <div className="space-y-2">
@@ -278,9 +295,11 @@ function ChatView() {
         <div className="flex gap-2">
           <input type="text" value={model} onChange={(e) => setModel(e.target.value)}
             placeholder="Model"
+            autoComplete="off" autoCorrect="off" autoCapitalize="off" spellCheck={false}
             className="flex-1 bg-gray-900 border border-gray-700 rounded-lg px-3 py-2 text-sm text-gray-300 placeholder-gray-600 focus:outline-none focus:border-blue-500" />
           <input type="text" value={cwd} onChange={(e) => setCwd(e.target.value)}
             placeholder="CWD"
+            autoComplete="off" autoCorrect="off" autoCapitalize="off" spellCheck={false}
             className="flex-1 bg-gray-900 border border-gray-700 rounded-lg px-3 py-2 text-sm text-gray-300 placeholder-gray-600 focus:outline-none focus:border-blue-500" />
         </div>
         <button onClick={handleNewConversation}
@@ -368,6 +387,7 @@ function ChatPanel({ conversationId }: { conversationId: string }) {
         <input type="text" value={input} onChange={(e) => setInput(e.target.value)}
           placeholder="Send a message..."
           disabled={sending}
+          autoComplete="off" autoCorrect="off" autoCapitalize="off" spellCheck={false}
           className="flex-1 bg-gray-900 border border-gray-700 rounded-lg px-4 py-3 text-gray-100 placeholder-gray-500 focus:outline-none focus:border-blue-500 disabled:opacity-50"
           autoFocus />
         <button type="submit" disabled={!input.trim() || sending}
@@ -375,6 +395,114 @@ function ChatPanel({ conversationId }: { conversationId: string }) {
           Send
         </button>
       </form>
+    </div>
+  );
+}
+
+// ═══════════════════════════════════════════════
+// Model Bar
+// ═══════════════════════════════════════════════
+
+function ModelBar() {
+  const { models, loadedModel, loadModel, unloadModel } = useModels();
+  const [expanded, setExpanded] = useState(false);
+  const [loadingModel, setLoadingModel] = useState<string | null>(null);
+  const [ctxInput, setCtxInput] = useState('32768');
+
+  async function handleLoad(modelId: string) {
+    setLoadingModel(modelId);
+    try {
+      await loadModel(modelId, parseInt(ctxInput) || undefined);
+    } finally {
+      setLoadingModel(null);
+    }
+  }
+
+  async function handleUnload(modelId: string) {
+    setLoadingModel(modelId);
+    try {
+      await unloadModel(modelId);
+    } finally {
+      setLoadingModel(null);
+    }
+  }
+
+  function formatCtx(n?: number): string {
+    if (!n) return '—';
+    if (n >= 1024) return `${Math.round(n / 1024)}k`;
+    return String(n);
+  }
+
+  return (
+    <div className="mb-6">
+      <button onClick={() => setExpanded(!expanded)}
+        className="w-full flex items-center justify-between bg-gray-900 border border-gray-800 rounded-lg px-4 py-3 text-sm hover:border-gray-700 transition-colors">
+        <div className="flex items-center gap-3">
+          <div className={`w-2 h-2 rounded-full ${loadedModel ? 'bg-green-500' : 'bg-red-500'}`} />
+          {loadedModel ? (
+            <span className="text-gray-200">
+              <span className="font-medium">{loadedModel.id}</span>
+              <span className="text-gray-500 ml-2">
+                ctx: {formatCtx(loadedModel.loadedContextLength)} / {formatCtx(loadedModel.maxContextLength)}
+              </span>
+              {loadedModel.quantization && (
+                <span className="text-gray-600 ml-2">{loadedModel.quantization}</span>
+              )}
+            </span>
+          ) : (
+            <span className="text-gray-500">No model loaded</span>
+          )}
+        </div>
+        <span className="text-gray-600 text-xs">{expanded ? 'collapse' : 'models'}</span>
+      </button>
+
+      {expanded && (
+        <div className="mt-2 bg-gray-900 border border-gray-800 rounded-lg overflow-hidden">
+          <div className="px-4 py-2 border-b border-gray-800 flex items-center gap-3">
+            <label className="text-xs text-gray-500">Context length:</label>
+            <select value={ctxInput} onChange={(e) => setCtxInput(e.target.value)}
+              className="bg-gray-800 border border-gray-700 rounded px-2 py-1 text-sm text-gray-300">
+              <option value="4096">4k</option>
+              <option value="8192">8k</option>
+              <option value="16384">16k</option>
+              <option value="32768">32k</option>
+              <option value="65536">64k</option>
+              <option value="131072">128k</option>
+            </select>
+          </div>
+          <div className="max-h-64 overflow-y-auto divide-y divide-gray-800">
+            {models.map((m) => (
+              <div key={m.id} className="flex items-center justify-between px-4 py-2 text-sm">
+                <div className="flex items-center gap-2 min-w-0">
+                  <div className={`w-1.5 h-1.5 rounded-full flex-shrink-0 ${m.state === 'loaded' ? 'bg-green-500' : 'bg-gray-700'}`} />
+                  <span className={`truncate ${m.state === 'loaded' ? 'text-gray-200' : 'text-gray-500'}`}>{m.id}</span>
+                  {m.state === 'loaded' && (
+                    <span className="text-xs text-gray-600 flex-shrink-0">
+                      {formatCtx(m.loadedContextLength)}
+                    </span>
+                  )}
+                  <span className="text-xs text-gray-700 flex-shrink-0">max {formatCtx(m.maxContextLength)}</span>
+                </div>
+                <div className="flex-shrink-0 ml-2">
+                  {m.state === 'loaded' ? (
+                    <button onClick={() => handleUnload(m.id)}
+                      disabled={loadingModel !== null}
+                      className="text-xs px-2 py-1 bg-red-900/30 text-red-400 rounded hover:bg-red-900/50 disabled:opacity-50">
+                      {loadingModel === m.id ? 'Unloading...' : 'Unload'}
+                    </button>
+                  ) : (
+                    <button onClick={() => handleLoad(m.id)}
+                      disabled={loadingModel !== null}
+                      className="text-xs px-2 py-1 bg-blue-900/30 text-blue-400 rounded hover:bg-blue-900/50 disabled:opacity-50">
+                      {loadingModel === m.id ? 'Loading...' : 'Load'}
+                    </button>
+                  )}
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
     </div>
   );
 }

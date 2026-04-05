@@ -4,6 +4,7 @@ import websocket from '@fastify/websocket';
 import { taskManager } from './queue/manager.js';
 import { conversationManager } from './conversations/manager.js';
 import { listAvailableModels } from './llm/client.js';
+import { getModelsDetailed, loadModel, unloadModel } from './llm/models.js';
 import { listModels } from '@opendispatch/shared';
 import type { CreateTaskInput, CreateConversationInput, SendMessageInput } from '@opendispatch/shared';
 import { exec } from 'node:child_process';
@@ -24,11 +25,23 @@ async function main() {
   app.get('/health', async () => ({ status: 'ok', timestamp: Date.now() }));
 
   app.get('/models', async () => {
-    const [available, registry] = await Promise.all([
-      listAvailableModels().catch(() => []),
+    const [detailed, registry] = await Promise.all([
+      getModelsDetailed().catch(() => []),
       Promise.resolve(listModels()),
     ]);
-    return { available, registry };
+    return { models: detailed, registry };
+  });
+
+  app.post<{ Body: { model: string; contextLength?: number } }>('/models/load', async (req) => {
+    const { model, contextLength } = req.body;
+    if (!model) return { ok: false, message: 'model is required' };
+    return loadModel(model, contextLength);
+  });
+
+  app.post<{ Body: { model: string } }>('/models/unload', async (req) => {
+    const { model } = req.body;
+    if (!model) return { ok: false, message: 'model is required' };
+    return unloadModel(model);
   });
 
   // ── Tasks (fire-and-forget mode) ──

@@ -8,16 +8,20 @@ const MAX_TOOL_ROUNDS = 10;
 
 const CHAT_SYSTEM_PROMPT = `You are OpenDispatch, a local AI assistant running on a macOS machine. You have access to shell commands, file operations, web fetching, browser automation, and desktop screen control.
 
-You are in conversation mode — the user is chatting with you interactively. Respond naturally and use tools when helpful. You don't need to call task_complete in chat mode.
+You are in conversation mode — the user is chatting with you interactively.
 
-Guidelines:
-- Use tools proactively when they'd help answer the user's question
-- Be conversational but concise
-- If the user asks you to do something, do it — don't just describe what you would do
-- Use file_read before modifying files
-- Use browser_navigate for web tasks (searching, form filling, data extraction). It opens a real Chromium browser and is fast with no vision model.
-- Use screen_control for non-browser desktop tasks or when browser automation can't handle it (CAPTCHAs, auth flows, native apps).
-- If a command fails, explain what went wrong and try alternatives`;
+CRITICAL — how to make progress:
+- Each turn, you MUST advance. Do NOT repeat tool calls you already made.
+- After listing/exploring files, MOVE ON — read the actual files, then answer.
+- Keep text responses SHORT. Use tools to gather info, then give a concise answer.
+- Do NOT narrate what you plan to do — just do it.
+- If you have enough information to answer, respond directly WITHOUT more tool calls.
+
+Tools: shell_exec, file_read, file_write, file_list, file_search, web_fetch, browser_navigate, screen_control.
+- Use browser_navigate for web tasks (fast, no vision model).
+- Use screen_control only for native macOS apps or CAPTCHAs.
+- Use file_read before modifying files.
+- If a command fails, try an alternative.`;
 
 export interface ChatContext {
   conversationId: string;
@@ -45,6 +49,8 @@ export async function runChatTurn(
     { role: 'user', content: userMessage },
   ];
 
+  const recentToolCalls: string[] = [];
+
   // Allow multiple tool rounds per user message
   for (let round = 0; round < MAX_TOOL_ROUNDS; round++) {
     const response = await chatCompletion({
@@ -63,6 +69,20 @@ export async function runChatTurn(
       } satisfies ChatStepEvent);
       return content;
     }
+
+    // Loop detection
+    const callSignatures = response.toolCalls.map(tc => `${tc.function.name}:${tc.function.arguments}`);
+    const isLoop = callSignatures.some(sig => recentToolCalls.filter(s => s === sig).length >= 2);
+    if (isLoop) {
+      messages.push({
+        role: 'user',
+        content: `STOP: You are repeating the same tool calls. The results are already in the conversation above. Use them to answer the user's question directly. Do NOT call any more tools — just respond with your answer now.`,
+      });
+      recentToolCalls.length = 0;
+      continue;
+    }
+    recentToolCalls.push(...callSignatures);
+    while (recentToolCalls.length > 10) recentToolCalls.shift();
 
     // Has tool calls — execute them and continue
     if (response.content) {
