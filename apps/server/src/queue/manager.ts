@@ -3,6 +3,7 @@ import { EventEmitter } from 'node:events';
 import { eq, ne } from 'drizzle-orm';
 import { db, tasks, taskSteps } from '@opendispatch/db';
 import { routeTask } from '@opendispatch/shared';
+import { getRegistry } from '../llm/registry.js';
 import { runAgentLoop, PauseController, type AgentStepEvent } from '../agent/loop.js';
 import type { Task, CreateTaskInput } from '@opendispatch/shared';
 import { homedir } from 'node:os';
@@ -31,10 +32,11 @@ export class TaskManager extends EventEmitter {
 
   async createTask(input: CreateTaskInput): Promise<Task> {
     const now = Date.now();
+    const registry = await getRegistry();
     const routing = routeTask({
       preferredModel: input.model,
       complexity: 'medium',
-    });
+    }, registry);
 
     const task: Task = {
       id: nanoid(),

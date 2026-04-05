@@ -1,135 +1,181 @@
-import type { ModelProfile } from '../types/model.js';
-
-// Minimum context floors (M3 Ultra 512GB RAM — no need to be conservative):
-// - 9B models: 32k
-// - 30-32B models: 32k
-// - 70B+ models: 64k
-// - 100B+ MoE models: 64k (fast enough to use lots of context)
-// - 100B+ dense models: 64k
-// - Embedding models: 2k (purpose-built)
-
-export const MODEL_REGISTRY: Record<string, ModelProfile> = {
-  'qwen3.5-9b-mlx': {
-    id: 'qwen3.5-9b-mlx',
-    name: 'Qwen 3.5 9B',
-    capabilities: ['general', 'code', 'fast'],
-    contextWindow: 32768,
-    minContextLength: 32768,
-    speed: 'fast',
-    quality: 'low',
-    supportsToolCalls: true,
-    cost: 1,
-  },
-  'qwen3-32b-mlx': {
-    id: 'qwen3-32b-mlx',
-    name: 'Qwen 3 32B',
-    capabilities: ['general', 'code', 'reasoning'],
-    contextWindow: 32768,
-    minContextLength: 32768,
-    speed: 'medium',
-    quality: 'medium',
-    supportsToolCalls: true,
-    cost: 3,
-  },
-  'gemma-4-31b-it@q8_0': {
-    id: 'gemma-4-31b-it@q8_0',
-    name: 'Gemma 4 31B (Q8)',
-    capabilities: ['general', 'code', 'reasoning'],
-    contextWindow: 32768,
-    minContextLength: 32768,
-    speed: 'medium',
-    quality: 'medium',
-    supportsToolCalls: true,
-    cost: 3,
-  },
-  'qwen3.5-122b': {
-    id: 'qwen3.5-122b',
-    name: 'Qwen 3.5 122B',
-    capabilities: ['general', 'code', 'reasoning'],
-    contextWindow: 32768,
-    minContextLength: 65536,
-    speed: 'slow',
-    quality: 'high',
-    supportsToolCalls: true,
-    cost: 7,
-  },
-  'qwen3.5-122b-a10b': {
-    id: 'qwen3.5-122b-a10b',
-    name: 'Qwen 3.5 122B MoE (10B active)',
-    capabilities: ['general', 'code', 'reasoning', 'fast'],
-    contextWindow: 32768,
-    minContextLength: 65536,
-    speed: 'fast',
-    quality: 'medium',
-    supportsToolCalls: true,
-    cost: 2,
-  },
-  'llama-3.3-70b': {
-    id: 'llama-3.3-70b',
-    name: 'Llama 3.3 70B',
-    capabilities: ['general', 'code', 'reasoning'],
-    contextWindow: 131072,
-    minContextLength: 65536,
-    speed: 'medium',
-    quality: 'high',
-    supportsToolCalls: true,
-    cost: 5,
-  },
-  'qwen3-235b-thinking': {
-    id: 'qwen3-235b-thinking',
-    name: 'Qwen 3 235B Thinking',
-    capabilities: ['reasoning', 'code'],
-    contextWindow: 32768,
-    minContextLength: 65536,
-    speed: 'slow',
-    quality: 'high',
-    supportsToolCalls: false,
-    cost: 10,
-  },
-  'qwen2.5-vl-72b': {
-    id: 'qwen2.5-vl-72b',
-    name: 'Qwen 2.5 VL 72B',
-    capabilities: ['vision', 'general', 'code'],
-    contextWindow: 32768,
-    minContextLength: 65536,
-    speed: 'slow',
-    quality: 'high',
-    supportsToolCalls: true,
-    cost: 7,
-  },
-  'hermes-3-70b': {
-    id: 'hermes-3-70b',
-    name: 'Hermes 3 70B',
-    capabilities: ['general', 'code', 'reasoning'],
-    contextWindow: 131072,
-    minContextLength: 65536,
-    speed: 'medium',
-    quality: 'high',
-    supportsToolCalls: true,
-    cost: 5,
-  },
-  'wizardlm-2-8x22b': {
-    id: 'wizardlm-2-8x22b',
-    name: 'WizardLM 2 8x22B',
-    capabilities: ['general', 'code', 'reasoning'],
-    contextWindow: 65536,
-    minContextLength: 65536,
-    speed: 'slow',
-    quality: 'high',
-    supportsToolCalls: true,
-    cost: 8,
-  },
-  'text-embedding-nomic-embed-text-v1.5': {
-    id: 'text-embedding-nomic-embed-text-v1.5',
-    name: 'Nomic Embed Text v1.5',
-    capabilities: ['embedding'],
-    contextWindow: 8192,
-    minContextLength: 2048,
-    speed: 'fast',
-    quality: 'medium',
-    supportsToolCalls: false,
-    cost: 1,
-  },
-};
+import type { ModelProfile, ModelCapability, ModelSpeed, ModelQuality } from '../types/model.js';
 
 export const DEFAULT_MODEL = 'qwen3.5-122b-a10b';
+
+/** Raw model info from LMStudio /api/v0/models */
+export interface LMStudioModelInfo {
+  id: string;
+  arch?: string;
+  quantization?: string;
+  max_context_length?: number;
+  capabilities?: string[];
+  type?: string; // 'llm' | 'vlm' | 'embedding'
+}
+
+/** Parse parameter count from model ID (e.g. "qwen3.5-122b-a10b" → 122) */
+function parseParamBillions(id: string): number | null {
+  // Match patterns like "122b", "9b", "235b", "70b", "32b", "8x22b" (MoE total)
+  const moeMatch = id.match(/(\d+)x(\d+)b/i);
+  if (moeMatch) return parseInt(moeMatch[1]) * parseInt(moeMatch[2]);
+
+  const match = id.match(/(\d+)b/i);
+  if (match) return parseInt(match[1]);
+  return null;
+}
+
+/** Parse active parameter count for MoE models (e.g. "122b-a10b" → 10) */
+function parseActiveParams(id: string): number | null {
+  const match = id.match(/a(\d+)b/i);
+  return match ? parseInt(match[1]) : null;
+}
+
+/** Check if model is a Mixture of Experts architecture */
+function isMoE(id: string, arch?: string): boolean {
+  if (arch?.includes('moe') || arch?.includes('mixtral')) return true;
+  if (id.includes('-a') && parseActiveParams(id) !== null) return true;
+  if (/\d+x\d+b/i.test(id)) return true;
+  return false;
+}
+
+/** Generate a human-readable name from model ID */
+function inferName(id: string, arch?: string): string {
+  // Clean up the ID into a readable name
+  let name = id
+    .replace(/@/g, ' ')
+    .replace(/-mlx$/, '')
+    .split('-')
+    .map(part => {
+      // Capitalize first letter of non-numeric parts
+      if (/^\d/.test(part)) return part.toUpperCase();
+      return part.charAt(0).toUpperCase() + part.slice(1);
+    })
+    .join(' ');
+
+  // Add MoE indicator if applicable
+  const activeParams = parseActiveParams(id);
+  if (activeParams && isMoE(id, arch)) {
+    name += ` (${activeParams}B active)`;
+  }
+
+  return name;
+}
+
+/** Infer model capabilities from metadata */
+function inferCapabilities(id: string, arch?: string, type?: string): ModelCapability[] {
+  const caps: ModelCapability[] = ['general', 'code'];
+
+  // Vision models
+  if (type === 'vlm' || arch?.includes('vl') || id.includes('-vl-')) {
+    caps.push('vision');
+  }
+
+  // Embedding models
+  if (arch?.includes('bert') || id.includes('embed')) {
+    return ['embedding'];
+  }
+
+  // Reasoning — larger models or explicit thinking models
+  const params = parseParamBillions(id);
+  if (params && params >= 30) caps.push('reasoning');
+  if (id.includes('thinking') || id.includes('reason')) caps.push('reasoning');
+
+  // Fast — small models or MoE with small active params
+  const activeParams = parseActiveParams(id);
+  if (params && params <= 14) caps.push('fast');
+  if (activeParams && activeParams <= 14) caps.push('fast');
+
+  return caps;
+}
+
+/** Infer speed based on model size and architecture */
+function inferSpeed(id: string, arch?: string): ModelSpeed {
+  const params = parseParamBillions(id);
+  const activeParams = parseActiveParams(id);
+  const effectiveParams = activeParams || params;
+
+  if (!effectiveParams) return 'medium';
+  if (effectiveParams <= 14) return 'fast';
+  if (effectiveParams <= 80) return 'medium';
+  return 'slow';
+}
+
+/** Infer quality based on model size */
+function inferQuality(id: string): ModelQuality {
+  const params = parseParamBillions(id);
+  if (!params) return 'medium';
+  if (params <= 14) return 'low';
+  if (params <= 40) return 'medium';
+  return 'high';
+}
+
+/** Infer cost (1-10) based on effective size */
+function inferCost(id: string, arch?: string): number {
+  // Embedding models are cheap
+  if (id.includes('embed') || arch?.includes('bert')) return 1;
+
+  const params = parseParamBillions(id);
+  const activeParams = parseActiveParams(id);
+
+  if (!params) return 5;
+
+  // MoE with small active params are cheap despite large total
+  if (activeParams) {
+    if (activeParams <= 14) return 2;
+    return 4;
+  }
+
+  // Dense models scale with size
+  if (params <= 14) return 1;
+  if (params <= 40) return 3;
+  if (params <= 80) return 5;
+  if (params <= 140) return 7;
+  return 10;
+}
+
+/**
+ * Infer minimum context length based on model size.
+ * M3 Ultra 512GB RAM — no need to be conservative.
+ */
+function inferMinContext(id: string): number {
+  const params = parseParamBillions(id);
+
+  // Embedding models
+  if (id.includes('embed')) return 2048;
+
+  if (!params) return 32768;
+  if (params <= 14) return 32768;
+  if (params <= 40) return 32768;
+  return 65536; // 70B+
+}
+
+/**
+ * Build a ModelProfile from LMStudio model metadata.
+ * Pure inference — no network calls.
+ */
+export function buildModelProfile(info: LMStudioModelInfo): ModelProfile {
+  const caps = inferCapabilities(info.id, info.arch, info.type);
+  const isEmbedding = caps.includes('embedding');
+
+  return {
+    id: info.id,
+    name: inferName(info.id, info.arch),
+    capabilities: caps,
+    contextWindow: info.max_context_length || (isEmbedding ? 8192 : 32768),
+    minContextLength: inferMinContext(info.id),
+    speed: inferSpeed(info.id, info.arch),
+    quality: inferQuality(info.id),
+    supportsToolCalls: info.capabilities?.includes('tool_use') ?? !isEmbedding,
+    cost: inferCost(info.id, info.arch),
+  };
+}
+
+/**
+ * Build a full registry from a list of LMStudio models.
+ */
+export function buildRegistry(models: LMStudioModelInfo[]): Record<string, ModelProfile> {
+  const registry: Record<string, ModelProfile> = {};
+  for (const m of models) {
+    registry[m.id] = buildModelProfile(m);
+  }
+  return registry;
+}

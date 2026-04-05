@@ -8,7 +8,7 @@ Turborepo monorepo with four packages:
 
 - `apps/server` — Fastify API server (port 3456) with agent loop, tool execution, task queue, conversation manager, and WebSocket
 - `apps/web` — Next.js 15 web UI (port 3001 default) with unified chat-first mobile interface
-- `packages/shared` — TypeScript types, model registry, routing logic, tool definitions
+- `packages/shared` — TypeScript types, model profile inference, routing logic, tool definitions
 - `packages/db` — SQLite via Drizzle ORM (stored at ~/.opendispatch/opendispatch.db)
 
 ## Key Concepts
@@ -39,10 +39,11 @@ Turborepo monorepo with four packages:
 - `list_background_tasks` — see all active and recent tasks
 - `load_model` — switch LMStudio models or change context window
 
-**Natural language model selection**: The chat system prompt teaches the LLM to parse model references from user messages:
-- "use the big model" → qwen3.5-122b
-- "use the fast model" → qwen3.5-9b-mlx
-- "use gemma" → gemma-4-31b-it@q8_0
+**Dynamic model registry**: The model registry is built automatically from LMStudio's `/api/v0/models` endpoint. Model profiles (speed, quality, cost, capabilities, context floors) are inferred from model metadata (architecture, parameter count, quantization). The server caches the registry and refreshes every 30 seconds. No manual registry updates needed when adding/removing models from LMStudio. Inference logic lives in `packages/shared/src/models/registry.ts`, server-side caching in `apps/server/src/llm/registry.ts`.
+
+**Natural language model selection**: The chat system prompt teaches the LLM to match model names from user messages against the dynamic model list:
+- "use the big model" → largest available model
+- "use the fast model" → smallest/cheapest model
 - "64k context" → contextLength: 65536
 - "max context" → contextLength: 262144
 

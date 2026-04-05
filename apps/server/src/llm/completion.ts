@@ -1,6 +1,6 @@
 import type { ChatMessage, ToolCall, ToolDefinition } from '@opendispatch/shared';
-import { MODEL_REGISTRY } from '@opendispatch/shared';
 import { llm } from './client.js';
+import { getModelProfile } from './registry.js';
 import type OpenAI from 'openai';
 
 interface CompletionOptions {
@@ -20,7 +20,7 @@ interface CompletionResult {
 }
 
 export async function chatCompletion(opts: CompletionOptions): Promise<CompletionResult> {
-  const modelProfile = MODEL_REGISTRY[opts.model];
+  const modelProfile = await getModelProfile(opts.model);
   const supportsTools = modelProfile?.supportsToolCalls ?? true;
 
   const params: OpenAI.Chat.ChatCompletionCreateParams = {

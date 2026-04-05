@@ -194,7 +194,7 @@ export const CHAT_EXTRA_TOOLS: ToolDefinition[] = [
         type: 'object',
         properties: {
           prompt: { type: 'string', description: 'Detailed description of the task. Be specific — the background agent has no context from this conversation.' },
-          model: { type: 'string', description: 'Model to use. Examples: "qwen3.5-122b-a10b" (fast MoE, default), "qwen3.5-122b" (full 122B, complex tasks), "qwen3.5-9b-mlx" (fast small), "gemma-4-31b-it@q8_0", "llama-3.3-70b". Leave empty for auto-routing.' },
+          model: { type: 'string', description: 'Model ID to use. Use the model name as shown in the model list. Leave empty for auto-routing.' },
           contextLength: { type: 'number', description: 'Context window size in tokens. Examples: 32768 (32k), 65536 (64k), 131072 (128k). Leave empty for current loaded context.' },
           workingDirectory: { type: 'string', description: 'Working directory for the task (default: user home)' },
         },
@@ -252,7 +252,7 @@ export const CHAT_EXTRA_TOOLS: ToolDefinition[] = [
       parameters: {
         type: 'object',
         properties: {
-          model: { type: 'string', description: 'Model ID to load. Available: qwen3.5-122b-a10b, qwen3.5-122b, qwen3.5-9b-mlx, qwen3-32b-mlx, gemma-4-31b-it@q8_0, llama-3.3-70b, hermes-3-70b, qwen3-235b-thinking, qwen2.5-vl-72b, wizardlm-2-8x22b' },
+          model: { type: 'string', description: 'Model ID to load. Use the model name as shown in the model list.' },
           contextLength: { type: 'number', description: 'Context window in tokens. Common values: 32768 (32k), 65536 (64k), 131072 (128k), 262144 (256k)' },
         },
         required: ['model'],

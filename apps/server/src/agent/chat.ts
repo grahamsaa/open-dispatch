@@ -25,11 +25,8 @@ WHEN TO USE BACKGROUND TASKS vs DIRECT TOOLS:
 
 NATURAL LANGUAGE MODEL/CONTEXT PARSING:
 When the user mentions a model or context window in their message, extract it:
-- "use qwen3.5 with 64k context" → model: "qwen3.5-122b-a10b", contextLength: 65536
-- "use the big model" or "use the full model" → model: "qwen3.5-122b"
-- "use the fast model" or "use the small model" → model: "qwen3.5-9b-mlx"
-- "use gemma" → model: "gemma-4-31b-it@q8_0"
-- "use llama" → model: "llama-3.3-70b"
+- Model names: match by keyword from the available model list (e.g. "use llama" → the llama model, "use the fast model" → smallest/cheapest model, "use the big model" → largest model)
+- "64k context" → contextLength: 65536
 - "128k context" → contextLength: 131072
 - "max context" → contextLength: 262144
 - If they don't specify, leave model/contextLength empty (uses current defaults).

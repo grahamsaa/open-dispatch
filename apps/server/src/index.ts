@@ -5,7 +5,7 @@ import { taskManager } from './queue/manager.js';
 import { conversationManager } from './conversations/manager.js';
 import { listAvailableModels } from './llm/client.js';
 import { getModelsDetailed, loadModel, unloadModel } from './llm/models.js';
-import { listModels } from '@opendispatch/shared';
+import { listModelProfiles } from './llm/registry.js';
 import type { CreateTaskInput, CreateConversationInput, SendMessageInput } from '@opendispatch/shared';
 import { exec } from 'node:child_process';
 import { promisify } from 'node:util';
@@ -27,7 +27,7 @@ async function main() {
   app.get('/models', async () => {
     const [detailed, registry] = await Promise.all([
       getModelsDetailed().catch(() => []),
-      Promise.resolve(listModels()),
+      listModelProfiles().catch(() => []),
     ]);
     return { models: detailed, registry };
   });

@@ -4,6 +4,7 @@ import { eq } from 'drizzle-orm';
 import { db, conversations, conversationMessages } from '@opendispatch/db';
 import { routeTask } from '@opendispatch/shared';
 import { getModelsDetailed } from '../llm/models.js';
+import { getRegistry } from '../llm/registry.js';
 import { runChatTurn, type ChatStepEvent } from '../agent/chat.js';
 import type { Conversation, ConversationMessage, CreateConversationInput, ChatMessage } from '@opendispatch/shared';
 import { homedir } from 'node:os';
@@ -21,7 +22,8 @@ async function pickDefaultModel(preferred?: string): Promise<string> {
   } catch {}
 
   // Fallback to router
-  return routeTask({ complexity: 'medium' }).modelId;
+  const registry = await getRegistry();
+  return routeTask({ complexity: 'medium' }, registry).modelId;
 }
 
 export class ConversationManager extends EventEmitter {
