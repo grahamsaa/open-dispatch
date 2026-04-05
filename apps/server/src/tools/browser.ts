@@ -72,8 +72,29 @@ Rules:
 - If the page content doesn't seem right for the task, re-navigate.
 - You are operating inside the user's real Chrome browser with their authenticated sessions. If a site shows you a logged-in state, you can use it directly.`;
 
+async function pickBrowserModel(preferred?: string): Promise<string> {
+  if (preferred) return preferred;
+  // Use the best loaded model with a usable context window
+  try {
+    const { getModelsDetailed } = await import('../llm/models.js');
+    const models = await getModelsDetailed();
+    const loaded = models
+      .filter(m => m.state === 'loaded' && (m.loadedContextLength || 0) >= 8192)
+      .sort((a, b) => {
+        // Prefer faster/smaller models for browser automation
+        const aCtx = a.loadedContextLength || 0;
+        const bCtx = b.loadedContextLength || 0;
+        // If both have enough context, prefer the one with less (likely faster)
+        if (aCtx >= 16384 && bCtx >= 16384) return aCtx - bCtx;
+        return bCtx - aCtx;
+      });
+    if (loaded.length > 0) return loaded[0].id;
+  } catch {}
+  return 'qwen3.5-122b-a10b';
+}
+
 export async function browserNavigate(args: BrowserNavigateArgs, defaultCwd: string): Promise<ToolResult> {
-  const model = args.model || 'qwen3.5-122b-a10b';
+  const model = await pickBrowserModel(args.model);
 
   try {
     const { context: ctx, mode } = await getBrowser();
