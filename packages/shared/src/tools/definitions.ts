@@ -231,6 +231,22 @@ export const CHAT_EXTRA_TOOLS: ToolDefinition[] = [
   {
     type: 'function',
     function: {
+      name: 'skill_update',
+      description: 'Record what you learned while performing a task so the skill improves over time. Call this after succeeding or failing at a browser/app task. Record what selectors worked, what failed, and any workarounds you found. This updates the skill file so future attempts benefit.',
+      parameters: {
+        type: 'object',
+        properties: {
+          skill: { type: 'string', description: 'Skill name to update (e.g., "gmail", "chase"). If it doesn\'t exist, a new skill file is created.' },
+          entry: { type: 'string', description: 'What you learned. Be specific: include selectors that worked/failed, URLs, workarounds, timing issues.' },
+          type: { type: 'string', description: 'Type of learning', enum: ['success', 'failure', 'workaround', 'selector_update'] },
+        },
+        required: ['skill', 'entry', 'type'],
+      },
+    },
+  },
+  {
+    type: 'function',
+    function: {
       name: 'load_model',
       description: 'Load a specific LLM model in LMStudio with a given context window size. Use when the user asks to switch models or change the context window. Unloads the current model first.',
       parameters: {

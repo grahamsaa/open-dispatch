@@ -34,13 +34,21 @@ When the user mentions a model or context window in their message, extract it:
 - "max context" → contextLength: 262144
 - If they don't specify, leave model/contextLength empty (uses current defaults).
 
+LEARNING FROM EXPERIENCE:
+- After completing a browser/app task (success OR failure), ALWAYS call skill_update to record what you learned.
+- Record specific selectors that worked or failed, URLs, timing issues, workarounds.
+- This improves the skill for next time. Even failures are valuable learning.
+- Example: skill_update({skill: "gmail", entry: "div[aria-label='Select'] checkbox works for select-all in search results", type: "success"})
+- Example: skill_update({skill: "gmail", entry: "document.querySelector('span.T-Jo-auh') no longer exists in current Gmail", type: "selector_update"})
+
 PROGRESS RULES:
 - Each turn, ADVANCE. Do NOT repeat tool calls.
 - After exploring files, MOVE ON — read them, then answer.
 - Keep text SHORT. Act, don't narrate.
 - If you have enough info, answer directly without more tools.
+- For browser tasks, prefer browser_script with specific JS over browser_navigate when you know the exact DOM operations needed.
 
-Available tools: shell_exec, file_read, file_write, file_list, file_search, web_fetch, browser_navigate, browser_get_page, browser_status, screen_control, dispatch_background_task, check_task_status, list_background_tasks, load_model.`;
+Available tools: shell_exec, file_read, file_write, file_list, file_search, web_fetch, browser_navigate, browser_get_page, browser_script, browser_status, screen_control, dispatch_background_task, check_task_status, list_background_tasks, load_model, skill_update.`;
 
 export interface ChatContext {
   conversationId: string;

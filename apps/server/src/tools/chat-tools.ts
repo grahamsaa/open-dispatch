@@ -1,6 +1,7 @@
 import type { ToolCall, ToolResult } from '@opendispatch/shared';
 import { taskManager } from '../queue/manager.js';
 import { loadModel } from '../llm/models.js';
+import { updateSkill } from '../skills/updater.js';
 
 export async function executeChatTool(call: ToolCall): Promise<ToolResult | null> {
   const name = call.function.name;
@@ -21,6 +22,8 @@ export async function executeChatTool(call: ToolCall): Promise<ToolResult | null
       return await listTasks();
     case 'load_model':
       return await handleLoadModel(args);
+    case 'skill_update':
+      return handleSkillUpdate(args);
     default:
       return null; // Not a chat tool — let the regular executor handle it
   }
@@ -110,6 +113,19 @@ async function listTasks(): Promise<ToolResult> {
       active: tasks.filter(t => t.status === 'running' || t.status === 'pending').length,
     }),
   };
+}
+
+function handleSkillUpdate(args: Record<string, unknown>): ToolResult {
+  const skill = args.skill as string;
+  const entry = args.entry as string;
+  const type = args.type as 'success' | 'failure' | 'workaround' | 'selector_update';
+
+  if (!skill || !entry || !type) {
+    return { success: false, output: '', error: 'skill, entry, and type are all required' };
+  }
+
+  const result = updateSkill({ skill, entry, type });
+  return { success: result.ok, output: result.message, error: result.ok ? undefined : result.message };
 }
 
 async function handleLoadModel(args: Record<string, unknown>): Promise<ToolResult> {
