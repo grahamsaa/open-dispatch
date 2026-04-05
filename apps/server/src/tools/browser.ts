@@ -332,11 +332,24 @@ export async function browserScript(args: BrowserScriptArgs): Promise<ToolResult
     }
 
     const result = await page.evaluate(args.script);
-    const output = result !== undefined && result !== null ? JSON.stringify(result, null, 2) : '(no return value)';
+    const scriptOutput = result !== undefined && result !== null ? JSON.stringify(result, null, 2) : null;
+
+    // Always capture page state after script execution so the agent knows what happened
+    await page.waitForTimeout(500);
+    const pageTitle = await page.title();
+    const pageUrl = page.url();
+    const bodySnippet = await page.evaluate(() => {
+      const main = document.querySelector('main, [role="main"], article');
+      return (main || document.body).textContent?.trim().slice(0, 500) || '';
+    });
+
+    const parts = [`URL: ${pageUrl}`, `Title: ${pageTitle}`];
+    if (scriptOutput) parts.push(`Script returned: ${scriptOutput}`);
+    parts.push(`Page content after script:\n${bodySnippet}`);
 
     return {
       success: true,
-      output: `URL: ${page.url()}\n\nResult:\n${typeof output === 'string' ? output.slice(0, 50000) : String(output)}`,
+      output: parts.join('\n').slice(0, 50000),
     };
   } catch (err) {
     return { success: false, output: '', error: `Script error: ${(err as Error).message}` };

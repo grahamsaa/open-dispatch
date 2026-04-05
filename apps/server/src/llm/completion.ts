@@ -50,8 +50,21 @@ export async function chatCompletion(opts: CompletionOptions): Promise<Completio
     params.messages = messages as OpenAI.Chat.ChatCompletionMessageParam[];
   }
 
-  const response = await llm.chat.completions.create(params);
-  const choice = response.choices[0];
+  // Retry up to 3 times on LMStudio connection failures
+  let response: OpenAI.Chat.ChatCompletion;
+  for (let attempt = 0; attempt < 3; attempt++) {
+    try {
+      response = await llm.chat.completions.create(params);
+      break;
+    } catch (err) {
+      const msg = (err as Error).message || '';
+      console.error(`LLM request failed (attempt ${attempt + 1}/3): ${msg}`);
+      if (attempt === 2) throw err;
+      // Wait before retry — LMStudio may need a moment
+      await new Promise(r => setTimeout(r, 2000 * (attempt + 1)));
+    }
+  }
+  const choice = response!.choices[0];
 
   if (!choice) {
     return { content: null, toolCalls: [] };
