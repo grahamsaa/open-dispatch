@@ -128,6 +128,21 @@ export const TOOL_DEFINITIONS: ToolDefinition[] = [
   {
     type: 'function',
     function: {
+      name: 'browser_script',
+      description: 'Run JavaScript code directly on the current browser page. Much more reliable than browser_navigate for complex web apps like Gmail. Use this when you know the exact DOM operations needed (clicking buttons, selecting checkboxes, reading text). Returns the result of the script.',
+      parameters: {
+        type: 'object',
+        properties: {
+          script: { type: 'string', description: 'JavaScript code to execute in the page context. Has access to document, window, etc. Return a value to get it back.' },
+          url: { type: 'string', description: 'Navigate to this URL first before running the script (optional)' },
+        },
+        required: ['script'],
+      },
+    },
+  },
+  {
+    type: 'function',
+    function: {
       name: 'browser_status',
       description: 'Check whether the browser is connected to Chrome (with authenticated sessions) or running standalone. Shows CDP connection status.',
       parameters: {

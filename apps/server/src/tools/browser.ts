@@ -312,6 +312,37 @@ async function executeAction(page: Page, action: BrowserAction): Promise<void> {
   }
 }
 
+interface BrowserScriptArgs {
+  script: string;
+  url?: string;
+}
+
+export async function browserScript(args: BrowserScriptArgs): Promise<ToolResult> {
+  try {
+    const { context: ctx, mode } = await getBrowser();
+    const pages = ctx.pages();
+    let page = pages[pages.length - 1];
+
+    if (!page) {
+      page = await ctx.newPage();
+    }
+
+    if (args.url) {
+      await page.goto(args.url, { waitUntil: 'domcontentloaded', timeout: 15000 });
+    }
+
+    const result = await page.evaluate(args.script);
+    const output = result !== undefined && result !== null ? JSON.stringify(result, null, 2) : '(no return value)';
+
+    return {
+      success: true,
+      output: `URL: ${page.url()}\n\nResult:\n${typeof output === 'string' ? output.slice(0, 50000) : String(output)}`,
+    };
+  } catch (err) {
+    return { success: false, output: '', error: `Script error: ${(err as Error).message}` };
+  }
+}
+
 export async function browserGetPage(): Promise<ToolResult> {
   try {
     const { context: ctx, mode } = await getBrowser();
