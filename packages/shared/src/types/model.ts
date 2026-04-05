@@ -7,6 +7,7 @@ export interface ModelProfile {
   name: string;
   capabilities: ModelCapability[];
   contextWindow: number;
+  minContextLength: number;
   speed: ModelSpeed;
   quality: ModelQuality;
   supportsToolCalls: boolean;

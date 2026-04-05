@@ -3,6 +3,7 @@ import { TOOL_DEFINITIONS, CHAT_EXTRA_TOOLS } from '@opendispatch/shared';
 import { chatCompletion } from '../llm/completion.js';
 import { executeTool } from '../tools/executor.js';
 import { executeChatTool } from '../tools/chat-tools.js';
+import { getRelevantSkills } from '../skills/loader.js';
 import { EventEmitter } from 'node:events';
 
 const MAX_TOOL_ROUNDS = 10;
@@ -61,8 +62,14 @@ export async function runChatTurn(
   userMessage: string,
   ctx: ChatContext,
 ): Promise<string> {
+  // Check for relevant skills based on the user's message
+  const skillDocs = getRelevantSkills(userMessage);
+  const skillPrompt = skillDocs.length > 0
+    ? `\n\nRELEVANT SKILLS (follow these step-by-step instructions):\n${skillDocs.join('\n\n---\n\n')}`
+    : '';
+
   const messages: ChatMessage[] = [
-    { role: 'system', content: CHAT_SYSTEM_PROMPT },
+    { role: 'system', content: CHAT_SYSTEM_PROMPT + skillPrompt },
     ...history,
     { role: 'user', content: userMessage },
   ];

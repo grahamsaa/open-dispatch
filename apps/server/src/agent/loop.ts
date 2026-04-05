@@ -3,9 +3,16 @@ import type { ChatMessage, ToolCall } from '@opendispatch/shared';
 import { TOOL_DEFINITIONS } from '@opendispatch/shared';
 import { chatCompletion } from '../llm/completion.js';
 import { executeTool } from '../tools/executor.js';
+import { getRelevantSkills } from '../skills/loader.js';
 import { EventEmitter } from 'node:events';
 
 const MAX_STEPS = 25;
+
+function getSkillsForPrompt(prompt: string): string {
+  const skillDocs = getRelevantSkills(prompt);
+  if (skillDocs.length === 0) return '';
+  return `\n\nRELEVANT SKILLS (follow these step-by-step instructions):\n${skillDocs.join('\n\n---\n\n')}`;
+}
 
 const SYSTEM_PROMPT = `You are OpenDispatch, a local AI assistant that executes tasks by using tools. You run on macOS and have access to shell commands, file operations, web fetching, browser automation, and desktop screen control.
 
@@ -82,7 +89,7 @@ export interface AgentResult {
 
 export async function runAgentLoop(prompt: string, ctx: AgentContext): Promise<AgentResult> {
   const messages: ChatMessage[] = [
-    { role: 'system', content: SYSTEM_PROMPT },
+    { role: 'system', content: SYSTEM_PROMPT + getSkillsForPrompt(prompt) },
     { role: 'user', content: prompt },
   ];
 

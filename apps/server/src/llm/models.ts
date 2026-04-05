@@ -1,9 +1,17 @@
 import { exec } from 'node:child_process';
 import { promisify } from 'node:util';
+import { MODEL_REGISTRY } from '@opendispatch/shared';
 
 const execAsync = promisify(exec);
 const LMSTUDIO_API = process.env.LMSTUDIO_URL?.replace('/v1', '') || 'http://localhost:1234';
 const LMS_CLI = process.env.LMS_PATH || `${process.env.HOME}/.lmstudio/bin/lms`;
+
+// Default minimum context: 16k for unknown models
+const DEFAULT_MIN_CONTEXT = 16384;
+
+function getMinContext(modelId: string): number {
+  return MODEL_REGISTRY[modelId]?.minContextLength || DEFAULT_MIN_CONTEXT;
+}
 
 export interface ModelInfo {
   id: string;
@@ -47,25 +55,33 @@ export async function loadModel(modelId: string, contextLength?: number): Promis
       }
     }
 
-    // Check if this model is already loaded with the right context
-    const target = models.find(m => m.id === modelId);
-    if (target?.state === 'loaded' && (!contextLength || target.loadedContextLength === contextLength)) {
-      return { ok: true, message: `${modelId} already loaded with ${target.loadedContextLength} context.` };
+    // Enforce minimum context floor
+    const minCtx = getMinContext(modelId);
+    if (contextLength && contextLength < minCtx) {
+      contextLength = minCtx;
+    }
+    if (!contextLength) {
+      contextLength = minCtx;
     }
 
-    // If model is loaded but with wrong context, unload first
+    // Check if this model is already loaded with acceptable context
+    const target = models.find(m => m.id === modelId);
     if (target?.state === 'loaded') {
+      const loadedCtx = target.loadedContextLength || 0;
+      if (loadedCtx >= minCtx && (!contextLength || loadedCtx === contextLength)) {
+        return { ok: true, message: `${modelId} already loaded with ${loadedCtx} context.` };
+      }
+      // Loaded but below floor or wrong context — reload
       await execAsync(`${LMS_CLI} unload "${modelId}"`, { timeout: 30000 });
     }
 
-    // Load with specified context length
-    const ctxArg = contextLength ? `-c ${contextLength}` : '';
+    // Load with enforced context length
     const { stdout, stderr } = await execAsync(
-      `${LMS_CLI} load "${modelId}" ${ctxArg} -y`,
+      `${LMS_CLI} load "${modelId}" -c ${contextLength} -y`,
       { timeout: 120000 }
     );
 
-    return { ok: true, message: `${modelId} loaded${contextLength ? ` with ${contextLength} context` : ''}.` };
+    return { ok: true, message: `${modelId} loaded with ${contextLength} context (min: ${minCtx}).` };
   } catch (err) {
     return { ok: false, message: `Failed to load model: ${(err as Error).message}` };
   }
