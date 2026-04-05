@@ -7,12 +7,15 @@ function getApiBase(): string {
 }
 
 export async function api<T>(path: string, init?: RequestInit): Promise<T> {
+  const headers: Record<string, string> = { ...init?.headers as Record<string, string> };
+  // Only set Content-Type for requests that have a body
+  if (init?.body) {
+    headers['Content-Type'] = 'application/json';
+  }
+
   const res = await fetch(`${getApiBase()}${path}`, {
     ...init,
-    headers: {
-      'Content-Type': 'application/json',
-      ...init?.headers,
-    },
+    headers,
   });
 
   if (!res.ok) {
