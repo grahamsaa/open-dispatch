@@ -6,8 +6,8 @@ const execAsync = promisify(exec);
 const LMSTUDIO_API = process.env.LMSTUDIO_URL?.replace('/v1', '') || 'http://localhost:1234';
 const LMS_CLI = process.env.LMS_PATH || `${process.env.HOME}/.lmstudio/bin/lms`;
 
-// Default minimum context: 16k for unknown models
-const DEFAULT_MIN_CONTEXT = 16384;
+// Default minimum context: 32k for unknown models
+const DEFAULT_MIN_CONTEXT = 32768;
 
 function getMinContext(modelId: string): number {
   return MODEL_REGISTRY[modelId]?.minContextLength || DEFAULT_MIN_CONTEXT;

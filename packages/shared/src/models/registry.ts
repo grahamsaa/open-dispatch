@@ -1,10 +1,11 @@
 import type { ModelProfile } from '../types/model.js';
 
-// Minimum context floors:
-// - 9B models: 8k (fast, small footprint)
-// - 30-32B models: 16k (medium tasks)
-// - 70B+ models: 32k (serious work needs serious context)
-// - 100B+ models: 32k (never worth loading at less)
+// Minimum context floors (M3 Ultra 512GB RAM — no need to be conservative):
+// - 9B models: 32k
+// - 30-32B models: 32k
+// - 70B+ models: 64k
+// - 100B+ MoE models: 64k (fast enough to use lots of context)
+// - 100B+ dense models: 64k
 // - Embedding models: 2k (purpose-built)
 
 export const MODEL_REGISTRY: Record<string, ModelProfile> = {
@@ -13,7 +14,7 @@ export const MODEL_REGISTRY: Record<string, ModelProfile> = {
     name: 'Qwen 3.5 9B',
     capabilities: ['general', 'code', 'fast'],
     contextWindow: 32768,
-    minContextLength: 8192,
+    minContextLength: 32768,
     speed: 'fast',
     quality: 'low',
     supportsToolCalls: true,
@@ -24,7 +25,7 @@ export const MODEL_REGISTRY: Record<string, ModelProfile> = {
     name: 'Qwen 3 32B',
     capabilities: ['general', 'code', 'reasoning'],
     contextWindow: 32768,
-    minContextLength: 16384,
+    minContextLength: 32768,
     speed: 'medium',
     quality: 'medium',
     supportsToolCalls: true,
@@ -35,7 +36,7 @@ export const MODEL_REGISTRY: Record<string, ModelProfile> = {
     name: 'Gemma 4 31B (Q8)',
     capabilities: ['general', 'code', 'reasoning'],
     contextWindow: 32768,
-    minContextLength: 16384,
+    minContextLength: 32768,
     speed: 'medium',
     quality: 'medium',
     supportsToolCalls: true,
@@ -46,7 +47,7 @@ export const MODEL_REGISTRY: Record<string, ModelProfile> = {
     name: 'Qwen 3.5 122B',
     capabilities: ['general', 'code', 'reasoning'],
     contextWindow: 32768,
-    minContextLength: 32768,
+    minContextLength: 65536,
     speed: 'slow',
     quality: 'high',
     supportsToolCalls: true,
@@ -57,7 +58,7 @@ export const MODEL_REGISTRY: Record<string, ModelProfile> = {
     name: 'Qwen 3.5 122B MoE (10B active)',
     capabilities: ['general', 'code', 'reasoning', 'fast'],
     contextWindow: 32768,
-    minContextLength: 32768,
+    minContextLength: 65536,
     speed: 'fast',
     quality: 'medium',
     supportsToolCalls: true,
@@ -68,7 +69,7 @@ export const MODEL_REGISTRY: Record<string, ModelProfile> = {
     name: 'Llama 3.3 70B',
     capabilities: ['general', 'code', 'reasoning'],
     contextWindow: 131072,
-    minContextLength: 32768,
+    minContextLength: 65536,
     speed: 'medium',
     quality: 'high',
     supportsToolCalls: true,
@@ -79,7 +80,7 @@ export const MODEL_REGISTRY: Record<string, ModelProfile> = {
     name: 'Qwen 3 235B Thinking',
     capabilities: ['reasoning', 'code'],
     contextWindow: 32768,
-    minContextLength: 32768,
+    minContextLength: 65536,
     speed: 'slow',
     quality: 'high',
     supportsToolCalls: false,
@@ -90,7 +91,7 @@ export const MODEL_REGISTRY: Record<string, ModelProfile> = {
     name: 'Qwen 2.5 VL 72B',
     capabilities: ['vision', 'general', 'code'],
     contextWindow: 32768,
-    minContextLength: 32768,
+    minContextLength: 65536,
     speed: 'slow',
     quality: 'high',
     supportsToolCalls: true,
@@ -101,7 +102,7 @@ export const MODEL_REGISTRY: Record<string, ModelProfile> = {
     name: 'Hermes 3 70B',
     capabilities: ['general', 'code', 'reasoning'],
     contextWindow: 131072,
-    minContextLength: 32768,
+    minContextLength: 65536,
     speed: 'medium',
     quality: 'high',
     supportsToolCalls: true,
@@ -112,7 +113,7 @@ export const MODEL_REGISTRY: Record<string, ModelProfile> = {
     name: 'WizardLM 2 8x22B',
     capabilities: ['general', 'code', 'reasoning'],
     contextWindow: 65536,
-    minContextLength: 32768,
+    minContextLength: 65536,
     speed: 'slow',
     quality: 'high',
     supportsToolCalls: true,
