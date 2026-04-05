@@ -42,7 +42,11 @@ export function useConversations() {
 
   useWebSocket((msg) => {
     if (msg.event === 'conversation:created') {
-      setConversations(prev => [msg.data as Conversation, ...prev]);
+      setConversations(prev => {
+        const conv = msg.data as Conversation;
+        if (prev.some(c => c.id === conv.id)) return prev;
+        return [conv, ...prev];
+      });
     } else if (msg.event === 'conversation:deleted') {
       setConversations(prev => prev.filter(c => c.id !== (msg.data as { id: string }).id));
     }
@@ -85,7 +89,11 @@ export function useConversationMessages(conversationId: string | null) {
     if (msg.event === 'conversation:message') {
       const m = msg.data as ConversationMessage & { conversationId: string };
       if (m.conversationId === conversationId) {
-        setMessages(prev => [...prev, m]);
+        // Deduplicate by message ID
+        setMessages(prev => {
+          if (prev.some(existing => existing.id === m.id)) return prev;
+          return [...prev, m];
+        });
       }
     }
   });

@@ -1,6 +1,6 @@
 import { nanoid } from 'nanoid';
 import { EventEmitter } from 'node:events';
-import { eq } from 'drizzle-orm';
+import { eq, ne } from 'drizzle-orm';
 import { db, tasks, taskSteps } from '@opendispatch/db';
 import { routeTask } from '@opendispatch/shared';
 import { runAgentLoop, PauseController, type AgentStepEvent } from '../agent/loop.js';
@@ -56,9 +56,11 @@ export class TaskManager extends EventEmitter {
     return row as Task | undefined;
   }
 
-  async listTasks(): Promise<Task[]> {
-    const rows = db.select().from(tasks).orderBy(tasks.createdAt).all();
-    return rows as Task[];
+  async listTasks(includeArchived = false): Promise<Task[]> {
+    if (includeArchived) {
+      return db.select().from(tasks).orderBy(tasks.createdAt).all() as Task[];
+    }
+    return db.select().from(tasks).where(ne(tasks.status, 'archived')).orderBy(tasks.createdAt).all() as Task[];
   }
 
   async getTaskSteps(taskId: string) {
@@ -101,6 +103,17 @@ export class TaskManager extends EventEmitter {
     db.update(tasks).set({ status: 'cancelled', updatedAt: Date.now() }).where(eq(tasks.id, id)).run();
     this.emit('task:cancelled', { id });
     return true;
+  }
+
+  async archiveTask(id: string): Promise<void> {
+    db.update(tasks).set({ status: 'archived', updatedAt: Date.now() }).where(eq(tasks.id, id)).run();
+    this.emit('task:archived', { id });
+  }
+
+  async deleteTask(id: string): Promise<void> {
+    db.delete(taskSteps).where(eq(taskSteps.taskId, id)).run();
+    db.delete(tasks).where(eq(tasks.id, id)).run();
+    this.emit('task:deleted', { id });
   }
 
   private async processQueue() {

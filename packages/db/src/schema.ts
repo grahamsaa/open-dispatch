@@ -4,7 +4,7 @@ export const tasks = sqliteTable('tasks', {
   id: text('id').primaryKey(),
   prompt: text('prompt').notNull(),
   status: text('status', {
-    enum: ['pending', 'running', 'paused', 'completed', 'failed', 'cancelled'],
+    enum: ['pending', 'running', 'paused', 'completed', 'failed', 'cancelled', 'archived'],
   }).notNull().default('pending'),
   model: text('model'),
   preferredModel: text('preferred_model'),

@@ -90,6 +90,16 @@ async function main() {
     return { ok: true };
   });
 
+  app.post<{ Params: { id: string } }>('/tasks/:id/archive', async (req) => {
+    await taskManager.archiveTask(req.params.id);
+    return { ok: true };
+  });
+
+  app.delete<{ Params: { id: string } }>('/tasks/:id', async (req) => {
+    await taskManager.deleteTask(req.params.id);
+    return { ok: true };
+  });
+
   // ── Conversations (chat mode) ──
 
   app.post<{ Body: CreateConversationInput }>('/conversations', async (req, reply) => {

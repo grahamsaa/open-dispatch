@@ -55,6 +55,7 @@ export function useModels() {
   }, [fetchModels]);
 
   const loadedModel = models.find(m => m.state === 'loaded');
+  const globalMaxContext = Math.max(...models.map(m => m.maxContextLength || 0), 0);
 
-  return { models, loading, loadedModel, loadModel, unloadModel, refetch: fetchModels };
+  return { models, loading, loadedModel, globalMaxContext, loadModel, unloadModel, refetch: fetchModels };
 }

@@ -53,13 +53,13 @@ export function useTasks() {
       case 'task:completed':
       case 'task:failed':
       case 'task:cancelled':
-        setTasks(prev => prev.map(t =>
-          t.id === (msg.data as { id: string }).id
-            ? { ...t, ...(msg.data as Partial<Task>) }
-            : t
-        ));
-        // Refetch to get full updated task
+      case 'task:paused':
+      case 'task:resumed':
         fetchTasks();
+        break;
+      case 'task:archived':
+      case 'task:deleted':
+        setTasks(prev => prev.filter(t => t.id !== (msg.data as { id: string }).id));
         break;
     }
   });
@@ -75,7 +75,15 @@ export function useTasks() {
     await api(`/tasks/${id}/cancel`, { method: 'POST' });
   }, []);
 
-  return { tasks, loading, connected, createTask, cancelTask, refetch: fetchTasks };
+  const archiveTask = useCallback(async (id: string) => {
+    await api(`/tasks/${id}/archive`, { method: 'POST' });
+  }, []);
+
+  const deleteTask = useCallback(async (id: string) => {
+    await api(`/tasks/${id}`, { method: 'DELETE' });
+  }, []);
+
+  return { tasks, loading, connected, createTask, cancelTask, archiveTask, deleteTask, refetch: fetchTasks };
 }
 
 export function useTaskSteps(taskId: string | null) {
@@ -91,16 +99,23 @@ export function useTaskSteps(taskId: string | null) {
     }
   }, [taskId]);
 
-  useEffect(() => { fetchSteps(); }, [fetchSteps]);
+  useEffect(() => {
+    setSteps([]);
+    fetchSteps();
+  }, [fetchSteps]);
 
-  const { connected } = useWebSocket((msg) => {
+  useWebSocket((msg) => {
     if (msg.event === 'task:step') {
       const step = msg.data as TaskStep;
       if (step.taskId === taskId) {
-        setSteps(prev => [...prev, step]);
+        // Deduplicate by step ID
+        setSteps(prev => {
+          if (prev.some(s => s.id === step.id)) return prev;
+          return [...prev, step];
+        });
       }
     }
   });
 
-  return { steps, connected, refetch: fetchSteps };
+  return { steps, refetch: fetchSteps };
 }
