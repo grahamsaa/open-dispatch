@@ -386,6 +386,37 @@ function ModelBar() {
   const [expanded, setExpanded] = useState(false);
   const [loadingModel, setLoadingModel] = useState<string | null>(null);
   const [ctxInput, setCtxInput] = useState('32768');
+  const [chromeStatus, setChromeStatus] = useState<{ connected: boolean; browser?: string } | null>(null);
+  const [chromeLaunching, setChromeLaunching] = useState(false);
+
+  useEffect(() => {
+    async function checkChrome() {
+      try {
+        const data = await api<{ connected: boolean; browser?: string }>('/chrome/status');
+        setChromeStatus(data);
+      } catch { setChromeStatus({ connected: false }); }
+    }
+    checkChrome();
+    const interval = setInterval(checkChrome, 10000);
+    return () => clearInterval(interval);
+  }, []);
+
+  async function handleChromeLaunch() {
+    setChromeLaunching(true);
+    try {
+      await api('/chrome/launch', { method: 'POST' });
+      // Re-check status after a moment
+      setTimeout(async () => {
+        try {
+          const data = await api<{ connected: boolean; browser?: string }>('/chrome/status');
+          setChromeStatus(data);
+        } catch {}
+        setChromeLaunching(false);
+      }, 3000);
+    } catch {
+      setChromeLaunching(false);
+    }
+  }
 
   // Build context options dynamically from available models
   const ctxOptions = [4096, 8192, 16384, 32768, 65536, 131072, 262144].filter(v => v <= globalMaxContext);
@@ -424,7 +455,14 @@ function ModelBar() {
             <span className="text-gray-500 text-xs">No model loaded</span>
           )}
         </div>
-        <span className="text-gray-600 text-[10px]">{expanded ? 'close' : 'models'}</span>
+        <div className="flex items-center gap-2">
+          {chromeStatus && (
+            <span className={`text-[10px] ${chromeStatus.connected ? 'text-green-600' : 'text-gray-600'}`}>
+              {chromeStatus.connected ? 'Chrome' : 'No Chrome'}
+            </span>
+          )}
+          <span className="text-gray-600 text-[10px]">{expanded ? 'close' : 'models'}</span>
+        </div>
       </button>
 
       {expanded && (
@@ -437,6 +475,18 @@ function ModelBar() {
                 <option key={v} value={v}>{fmtCtx(v)}</option>
               ))}
             </select>
+          </div>
+          <div className="px-3 py-2 border-b border-gray-800 flex items-center justify-between sticky top-8 bg-gray-900">
+            <div className="flex items-center gap-2">
+              <div className={`w-1.5 h-1.5 rounded-full ${chromeStatus?.connected ? 'bg-green-500' : 'bg-gray-600'}`} />
+              <span className="text-[10px] text-gray-400">
+                {chromeStatus?.connected ? `Chrome CDP connected` : 'Chrome CDP not connected'}
+              </span>
+            </div>
+            <button onClick={handleChromeLaunch} disabled={chromeLaunching}
+              className="text-[10px] px-2 py-1 bg-blue-900/30 text-blue-400 rounded hover:bg-blue-900/50 disabled:opacity-50">
+              {chromeLaunching ? 'Launching...' : chromeStatus?.connected ? 'Relaunch' : 'Launch Chrome'}
+            </button>
           </div>
           {models.map(m => (
             <div key={m.id} className="flex items-center justify-between px-3 py-2 border-b border-gray-800/50 text-xs">
